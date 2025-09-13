@@ -1,1 +1,62 @@
-node_modules
+# Node
+node_modules/
+
+# Build output
+*.log
+dist/
+build/
+.expo/
+.expo-shared/
+web-build/
+
+# Metro
+.cache/
+
+# Expo
+*.turtlecode
+*.turtle
+
+# React Native
+android/app/build/
+ios/Pods/
+*.keystore
+*.jks
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+
+# Misc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Local
+*.local
+
+# Test
+coverage/
+
+# Windows
+*.exe
+*.dll
+*.bat
+*.ps1
+
+# Mac
+*.swp
+*.swo
+
+# Others
+.idea/
+*.iml
+*.sublime-workspace
+*.sublime-project

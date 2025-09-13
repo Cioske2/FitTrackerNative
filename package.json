@@ -1,5 +1,16 @@
 {
   "dependencies": {
-    "react-native": "^0.80.1"
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@types/react": "~19.1.10",
+    "expo-camera": "~17.0.7",
+    "expo-constants": "~18.0.8",
+    "expo-linear-gradient": "~15.0.7",
+    "expo-secure-store": "~15.0.7",
+    "react": "^19.1.0",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-svg": "^15.12.1",
+    "react-native-url-polyfill": "^2.0.0",
+    "typescript": "~5.9.2"
   }
 }
