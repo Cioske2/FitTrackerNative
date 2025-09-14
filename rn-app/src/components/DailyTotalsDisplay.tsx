@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { colors } from '../theme/colors';
 import { useDiaryStore } from '../store/diaryStore';
 import { useGoalsStore } from '../store/goalsStore';
 
@@ -58,15 +59,15 @@ function Small({ label, value }:{ label:string; value:number }) {
 }
 
 const styles = StyleSheet.create({
-  container:{ backgroundColor:'#1f2937', padding:12, borderRadius:12, marginBottom:12 },
-  title:{ color:'#fff', fontWeight:'600', marginBottom:8 },
+  container:{ backgroundColor:colors.cardAlt, padding:14, borderRadius:16, marginBottom:18, borderWidth:1, borderColor:colors.border },
+  title:{ color:colors.textPrimary, fontWeight:'600', marginBottom:10, fontSize:15 },
   row:{ flexDirection:'row', justifyContent:'space-between' },
   metric:{ flex:1, marginHorizontal:4 },
-  metricLabel:{ color:'#ccc', fontSize:11, marginBottom:4, textAlign:'center' },
-  barOuter:{ backgroundColor:'#111827', height:6, borderRadius:4, overflow:'hidden', flexDirection:'row' },
-  barInner:{ backgroundColor:'#10b981', height:'100%' },
-  metricValue:{ color:'#fff', fontSize:11, textAlign:'center', marginTop:4 },
-  smallBox:{ backgroundColor:'#111827', paddingVertical:6, paddingHorizontal:10, borderRadius:8, minWidth:60, alignItems:'center' },
-  smallLabel:{ color:'#888', fontSize:11 },
-  smallVal:{ color:'#fff', fontSize:12, fontWeight:'600', marginTop:2 }
+  metricLabel:{ color:colors.textMuted, fontSize:11, marginBottom:6, textAlign:'center', letterSpacing:0.3 },
+  barOuter:{ backgroundColor:colors.card, height:8, borderRadius:6, overflow:'hidden', flexDirection:'row' },
+  barInner:{ backgroundColor:colors.accent, height:'100%' },
+  metricValue:{ color:colors.textPrimary, fontSize:11, textAlign:'center', marginTop:4, fontWeight:'500' },
+  smallBox:{ backgroundColor:colors.card, paddingVertical:6, paddingHorizontal:12, borderRadius:10, minWidth:68, alignItems:'center', borderWidth:1, borderColor:colors.borderAlt },
+  smallLabel:{ color:colors.textMuted, fontSize:10, textTransform:'uppercase', letterSpacing:0.5 },
+  smallVal:{ color:colors.textPrimary, fontSize:13, fontWeight:'600', marginTop:2 }
 });

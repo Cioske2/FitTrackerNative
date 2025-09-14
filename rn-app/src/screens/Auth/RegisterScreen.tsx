@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
+import { colors } from '../../theme/colors';
 import { useAuthStore } from '../../store/authStore';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { ParamListBase } from '@react-navigation/native';
@@ -39,10 +40,10 @@ export default function RegisterScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container:{ flex:1, backgroundColor:'#000', padding:24, justifyContent:'center' },
-  logo:{ fontSize:32, fontWeight:'700', color:'#fff', textAlign:'center', marginBottom:32 },
-  form:{ gap:16 },
-  input:{ backgroundColor:'#1f1f1f', borderRadius:8, paddingHorizontal:16, paddingVertical:14, color:'#fff' },
-  button:{ backgroundColor:'#10b981', paddingVertical:16, borderRadius:10, marginTop:8 },
-  buttonText:{ textAlign:'center', color:'#000', fontWeight:'600', fontSize:16 }
+  container:{ flex:1, backgroundColor:colors.background, padding:28, justifyContent:'center' },
+  logo:{ fontSize:30, fontWeight:'700', color:colors.textPrimary, textAlign:'center', marginBottom:36, letterSpacing:0.5 },
+  form:{ gap:18 },
+  input:{ backgroundColor:colors.cardAlt, borderRadius:12, paddingHorizontal:18, paddingVertical:16, color:colors.textPrimary, borderWidth:1, borderColor:colors.border },
+  button:{ backgroundColor:colors.accent, paddingVertical:16, borderRadius:14, marginTop:12 },
+  buttonText:{ textAlign:'center', color:'#fff', fontWeight:'600', fontSize:16, letterSpacing:0.5 }
 });

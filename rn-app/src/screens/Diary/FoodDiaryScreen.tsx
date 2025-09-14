@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, SectionList, Pressable, ActivityIndicator, RefreshControl, TextInput } from 'react-native';
+import { View, Text, StyleSheet, SectionList, Pressable, ActivityIndicator, RefreshControl, TextInput, KeyboardAvoidingView, Platform, ScrollView, useWindowDimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 import DailyTotalsDisplay from '../../components/DailyTotalsDisplay';
 import { useDiaryStore } from '../../store/diaryStore';
@@ -21,6 +22,8 @@ export default function FoodDiaryScreen({ navigation }: Props) {
   const { search, setSearch, runSearch, results } = useFoodStore();
   const [quick, setQuick] = useState<QuickAddState>({ name:'', quantity:'100', calories:'0', protein:'0', carbs:'0', fat:'0' });
   const [adding, setAdding] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [addingQuick, setAddingQuick] = useState(false);
 
   useEffect(() => { load(); }, [date]);
 
@@ -43,6 +46,63 @@ export default function FoodDiaryScreen({ navigation }: Props) {
   }, [quick]);
 
   const canAdd = errors.length===0 && !adding;
+
+  // Build recent foods from latest diary entries (unique by food_name_snapshot)
+  const recentFoods = useMemo(()=>{
+    const seen = new Set<string>();
+    const list: any[] = [];
+    [...entries].reverse().forEach(e=>{
+      const key = e.food_name_snapshot?.toLowerCase();
+      if (key && !seen.has(key)) { seen.add(key); list.push(e); }
+    });
+    return list.slice(0,5);
+  }, [entries]);
+
+  const addFromEntryTemplate = async (entryTemplate:any) => {
+    if (addingQuick) return;
+    setAddingQuick(true);
+    try {
+      // scale macros to 100g base (mockup mostra 100g)
+      const baseQty = entryTemplate.consumed_quantity || 100;
+      const targetQty = 100;
+      const factor = baseQty ? (targetQty / baseQty) : 1;
+      await addEntry({
+        foodName: entryTemplate.food_name_snapshot,
+        consumedQuantity: targetQty,
+        consumedUnit: entryTemplate.consumed_unit || 'g',
+        calculatedNutrients: {
+          calories: Math.round((entryTemplate.calories_calculated||0)*factor),
+          protein: (entryTemplate.protein_g_calculated||0)*factor,
+          carbohydrates_total: (entryTemplate.carbohydrates_total_g_calculated||0)*factor,
+          fat_total: (entryTemplate.fat_total_g_calculated||0)*factor
+        },
+        consumptionDate: date,
+        mealType: null
+      } as any);
+    } finally { setAddingQuick(false); }
+  };
+
+  const addFromSearch = async (food:any) => {
+    if (addingQuick) return;
+    setAddingQuick(true);
+    try {
+      await addEntry({
+        foodId: food.id,
+        foodName: food.name,
+        consumedQuantity: 100,
+        consumedUnit: 'g',
+        calculatedNutrients: {
+          calories: food.calories || 0,
+          protein: food.protein_g || 0,
+          carbohydrates_total: food.carbohydrates_total_g || 0,
+          fat_total: food.fat_total_g || 0
+        },
+        consumptionDate: date,
+        mealType: null
+      } as any);
+      setSearch('');
+    } finally { setAddingQuick(false); }
+  };
 
   const submitQuick = async () => {
     if (!canAdd) return;
@@ -78,9 +138,12 @@ export default function FoodDiaryScreen({ navigation }: Props) {
   const sections = useMemo(()=>buildSections(entries), [entries]);
   const keyExtractor = useCallback((i:any)=>String(i.id), []);
   const getItemLayout = useCallback((_:any, index:number)=>({ length:72, offset:72*index, index }), []);
+  const { width } = useWindowDimensions();
+  const contentWrapperStyle = useMemo(() => [styles.contentWrapper, width>720 && styles.contentWrapperWide], [width]);
 
   return (
     <View style={styles.container}>
+      <View style={contentWrapperStyle}>
       <View style={styles.headerRow}>
         <View style={styles.dateNav}>          
           <Pressable onPress={()=>shiftDate(-1)} style={styles.navBtn}><Text style={styles.navBtnText}>{'<'}</Text></Pressable>
@@ -120,58 +183,71 @@ export default function FoodDiaryScreen({ navigation }: Props) {
           stickySectionHeadersEnabled
           removeClippedSubviews
           windowSize={5}
-          ListHeaderComponent={
-            <View>
-              <DailyTotalsDisplay />
-              <View style={styles.searchBox}>
-                <TextInput
-                  placeholder='Cerca alimento...'
-                  placeholderTextColor='#666'
-                  style={styles.input}
-                  value={search}
-                  onChangeText={(t:string)=>{ setSearch(t); runSearch(t); }}
-                />
+          ListHeaderComponent={<View><DailyTotalsDisplay /></View>}
+        />
+      )}
+      <Pressable style={styles.fab} onPress={()=>setPanelOpen(true)}><Text style={styles.fabPlus}>+</Text></Pressable>
+
+      {panelOpen && (
+        <View style={styles.overlay}>
+          <KeyboardAvoidingView style={styles.panelWrapper} behavior={Platform.OS==='ios'?'padding':undefined}>
+            <View style={styles.panelBox}>
+              <View style={styles.panelTopBar}>
+                <Pressable onPress={()=>setPanelOpen(false)} style={styles.closeHit}><Ionicons name="close" size={22} color={colors.textPrimary}/></Pressable>
+                <Text style={styles.panelTitle}>Aggiungi alimento</Text>
+              </View>
+              <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={{paddingBottom:40}}>
+                <View style={styles.searchBar}> 
+                  <Ionicons name="search" size={16} color={colors.textMuted} style={{marginRight:8}} />
+                  <TextInput
+                    placeholder='Cerca alimento'
+                    placeholderTextColor={colors.textMuted}
+                    style={styles.searchInput}
+                    value={search}
+                    onChangeText={(t:string)=>{ setSearch(t); runSearch(t); }}
+                  />
+                </View>
                 {results.length>0 && (
-                  <View style={styles.resultsBox}>
+                  <View style={styles.resultsDropdown}>
                     {results.slice(0,6).map(r => (
-                      <Pressable key={r.id} style={styles.resultRow} onPress={()=>{
-                        setQuick(q=>({ ...q, name:r.name, calories:String(r.calories||0), protein:String(r.protein_g||0), carbs:String(r.carbohydrates_total_g||0), fat:String(r.fat_total_g||0) }));
-                        setSearch('');
-                      }}>
+                      <Pressable key={r.id} style={styles.resultRow} onPress={()=>addFromSearch(r)}>
                         <Text style={styles.resultText}>{r.name}</Text>
                         <Text style={styles.resultCals}>{Math.round(r.calories||0)} kcal</Text>
                       </Pressable>
                     ))}
                   </View>
                 )}
-              </View>
-              <View style={styles.quickBox}>
-                <Text style={styles.quickTitle}>Quick Add</Text>
-                <View style={styles.mealRow}>
-                  {mealTypes.map(mt => (
-                    <Pressable key={mt.key} onPress={()=>setMealType(mealType===mt.key? null: mt.key)} style={[styles.mealBtn, mealType===mt.key && styles.mealBtnActive]}>
-                      <Text style={[styles.mealBtnText, mealType===mt.key && styles.mealBtnTextActive]}>{mt.label}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <TextInput placeholder='Nome alimento' placeholderTextColor='#666' style={styles.input} value={quick.name} onChangeText={(t:string)=>setQuick((s:QuickAddState)=>({...s,name:t}))} />
-                <View style={styles.rowWrap}>
-                  <TextInput placeholder='Qty g' placeholderTextColor='#666' style={styles.inputNum} keyboardType='numeric' value={quick.quantity} onChangeText={(t:string)=>setQuick((s:QuickAddState)=>({...s,quantity:t}))} />
-                  <TextInput placeholder='kcal' placeholderTextColor='#666' style={styles.inputNum} keyboardType='numeric' value={quick.calories} onChangeText={(t:string)=>setQuick((s:QuickAddState)=>({...s,calories:t}))} />
-                  <TextInput placeholder='P' placeholderTextColor='#666' style={styles.inputNum} keyboardType='numeric' value={quick.protein} onChangeText={(t:string)=>setQuick((s:QuickAddState)=>({...s,protein:t}))} />
-                  <TextInput placeholder='C' placeholderTextColor='#666' style={styles.inputNum} keyboardType='numeric' value={quick.carbs} onChangeText={(t:string)=>setQuick((s:QuickAddState)=>({...s,carbs:t}))} />
-                  <TextInput placeholder='F' placeholderTextColor='#666' style={styles.inputNum} keyboardType='numeric' value={quick.fat} onChangeText={(t:string)=>setQuick((s:QuickAddState)=>({...s,fat:t}))} />
-                  <Pressable disabled={!canAdd} style={[styles.addBtn, !canAdd && styles.addBtnDisabled]} onPress={submitQuick}><Text style={styles.addBtnText}>{adding? '...' : '+'}</Text></Pressable>
-                </View>
-                <TextInput placeholder='Note (opzionale)' placeholderTextColor='#666' style={styles.input} value={notes} onChangeText={setNotes} />
-                {errors.length>0 && (
-                  <Text style={styles.errorText}>{errors[0]}</Text>
-                )}
-              </View>
+                <Pressable style={styles.actionRow} onPress={()=>{ setPanelOpen(false); navigation.navigate('BarcodeScanner'); }}>
+                  <View style={styles.actionIcon}><Ionicons name='barcode-outline' size={20} color={colors.accent} /></View>
+                  <Text style={styles.actionLabel}>Scansiona codice a barre</Text>
+                  <Ionicons name='chevron-forward' size={18} color={colors.textMuted} />
+                </Pressable>
+                <Pressable style={styles.actionRow}>
+                  <View style={styles.actionIcon}><Ionicons name='sparkles-outline' size={20} color={colors.accent} /></View>
+                  <View style={{flex:1}}>
+                    <Text style={styles.actionLabel}>Analizza pasto con AI</Text>
+                    <Text style={styles.actionSub}>Nuova funzione</Text>
+                  </View>
+                  <Ionicons name='chevron-forward' size={18} color={colors.textMuted} />
+                </Pressable>
+                <Text style={styles.recentsHeader}>Ultimi alimenti</Text>
+                {recentFoods.map(r => (
+                  <View key={r.id} style={styles.recentCard}>
+                    <View style={styles.thumb}>{chooseEmoji(r.food_name_snapshot)}</View>
+                    <View style={{flex:1}}>
+                      <Text style={styles.recentName}>{r.food_name_snapshot}</Text>
+                      <Text style={styles.recentQty}>100g</Text>
+                    </View>
+                    <Pressable disabled={addingQuick} onPress={()=>addFromEntryTemplate(r)} style={styles.addCircle}><Text style={styles.addCircleTxt}>+</Text></Pressable>
+                  </View>
+                ))}
+                {recentFoods.length===0 && <Text style={styles.noRecent}>Nessun alimento recente</Text>}
+              </ScrollView>
             </View>
-          }
-        />
+          </KeyboardAvoidingView>
+        </View>
       )}
+      </View>
     </View>
   );
 }
@@ -196,7 +272,9 @@ function buildSections(entries: any[]) {
 function labelForMeal(k:string){ switch(k){ case 'breakfast': return 'Colazione'; case 'lunch': return 'Pranzo'; case 'dinner': return 'Cena'; case 'snack': return 'Snack'; default: return 'Altro'; } }
 
 const styles = StyleSheet.create({
-  container:{ flex:1, backgroundColor:colors.background, padding:16 },
+  container:{ flex:1, backgroundColor:colors.background },
+  contentWrapper:{ flex:1, padding:16, width:'100%', alignSelf:'center' },
+  contentWrapperWide:{ maxWidth:720 },
   headerRow:{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12 },
   title:{ fontSize:18, fontWeight:'600', color:colors.textPrimary, letterSpacing:0.5 },
   scan:{ color:colors.accent, fontSize:13, fontWeight:'600' },
@@ -232,4 +310,37 @@ const styles = StyleSheet.create({
   mealBtnText:{ color:colors.textSecondary, fontSize:12, fontWeight:'500' },
   mealBtnTextActive:{ color:'#04140a', fontWeight:'700' },
   errorText:{ color:colors.danger, fontSize:12, marginTop:4 },
+  fab:{ position:'absolute', bottom:28, right:24, backgroundColor:colors.accent, width:62, height:62, borderRadius:22, alignItems:'center', justifyContent:'center', shadowColor:'#000', shadowOpacity:0.4, shadowRadius:10, shadowOffset:{width:0,height:4}, elevation:8 },
+  fabPlus:{ color:'#04140a', fontSize:34, fontWeight:'700', marginTop:-2 },
+  overlay:{ position:'absolute', top:0, left:0, right:0, bottom:0, backgroundColor:colors.background },
+  panelWrapper:{ flex:1 },
+  panelBox:{ flex:1, paddingTop:38, paddingHorizontal:18 },
+  panelTopBar:{ flexDirection:'row', alignItems:'center', marginBottom:20 },
+  closeHit:{ padding:6, marginRight:8 },
+  panelTitle:{ flex:1, textAlign:'center', color:colors.textPrimary, fontSize:18, fontWeight:'600', letterSpacing:0.4 },
+  searchBar:{ flexDirection:'row', alignItems:'center', backgroundColor:colors.cardAlt, borderRadius:12, paddingHorizontal:14, paddingVertical:10, borderWidth:1, borderColor:colors.borderAlt, marginBottom:16 },
+  searchInput:{ flex:1, color:colors.textPrimary, fontSize:14 },
+  resultsDropdown:{ backgroundColor:colors.card, borderRadius:12, borderWidth:1, borderColor:colors.borderAlt, marginBottom:16, overflow:'hidden' },
+  actionRow:{ flexDirection:'row', alignItems:'center', backgroundColor:colors.cardAlt, padding:14, borderRadius:16, marginBottom:12, borderWidth:1, borderColor:colors.border },
+  actionIcon:{ width:42, height:42, borderRadius:14, backgroundColor:colors.card, alignItems:'center', justifyContent:'center', marginRight:14, borderWidth:1, borderColor:colors.borderAlt },
+  actionLabel:{ flex:1, color:colors.textPrimary, fontSize:14, fontWeight:'600' },
+  actionSub:{ color:colors.textMuted, fontSize:11, marginTop:2 },
+  recentsHeader:{ color:colors.textPrimary, fontSize:13, fontWeight:'600', marginTop:12, marginBottom:10, letterSpacing:0.5 },
+  recentCard:{ flexDirection:'row', alignItems:'center', backgroundColor:colors.cardAlt, padding:12, borderRadius:16, marginBottom:10, borderWidth:1, borderColor:colors.border },
+  thumb:{ width:46, height:46, borderRadius:14, backgroundColor:colors.card, borderWidth:1, borderColor:colors.borderAlt, alignItems:'center', justifyContent:'center', marginRight:14 },
+  recentName:{ color:colors.textPrimary, fontSize:14, fontWeight:'600' },
+  recentQty:{ color:colors.textMuted, fontSize:11, marginTop:2 },
+  addCircle:{ backgroundColor:colors.card, width:40, height:40, borderRadius:14, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:colors.borderAlt },
+  addCircleTxt:{ color:colors.accent, fontSize:24, fontWeight:'700', marginTop:-2 },
+  noRecent:{ color:colors.textMuted, fontSize:12, textAlign:'center', marginTop:24 }
 });
+
+function chooseEmoji(name:string){
+  const lower = (name||'').toLowerCase();
+  let emoji = '🍽️';
+  if (lower.includes('pollo')||lower.includes('chicken')) emoji='🍗';
+  else if (lower.includes('riso')||lower.includes('rice')) emoji='🍚';
+  else if (lower.includes('brocc')) emoji='🥦';
+  else if (lower.includes('pane')||lower.includes('bread')) emoji='🍞';
+  return <Text style={{fontSize:20}}>{emoji}</Text>;
+}

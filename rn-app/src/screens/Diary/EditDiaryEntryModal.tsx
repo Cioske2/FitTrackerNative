@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TextInput, Pressable, ScrollView } from 'react-native';
+import { colors } from '../../theme/colors';
 import { RouteProp, useRoute, useNavigation } from '@react-navigation/native';
 import { useDiaryStore } from '../../store/diaryStore';
 
@@ -25,7 +26,7 @@ export default function EditDiaryEntryModal(){
   } }, [entry?.id]);
 
   if(!entry){
-    return <View style={styles.container}><Text style={styles.missing}>Voce non trovata</Text></View>;
+  return <View style={styles.container}><Text style={styles.missing}>Voce non trovata</Text></View>;
   }
 
   const persist = async () => {
@@ -42,15 +43,15 @@ export default function EditDiaryEntryModal(){
   const del = async () => { await removeEntry(entry.id); nav.goBack(); };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={styles.container} style={{backgroundColor:colors.background}}>
       <Text style={styles.title}>{entry.food_name_snapshot}</Text>
-      <TextInput style={styles.input} keyboardType='numeric' value={qty} onChangeText={setQty} placeholder='Quantità' placeholderTextColor='#666' />
-      <TextInput style={styles.input} multiline value={notes} onChangeText={setNotes} placeholder='Note' placeholderTextColor='#666' />
+      <TextInput style={styles.input} keyboardType='numeric' value={qty} onChangeText={setQty} placeholder='Quantità' placeholderTextColor={colors.textMuted} />
+      <TextInput style={[styles.input,{height:90,textAlignVertical:'top'}]} multiline value={notes} onChangeText={setNotes} placeholder='Note' placeholderTextColor={colors.textMuted} />
       <View style={styles.row}>        
-        <TextInput style={styles.macro} keyboardType='numeric' value={protein} onChangeText={setProtein} placeholder='Prot' placeholderTextColor='#666' />
-        <TextInput style={styles.macro} keyboardType='numeric' value={carbs} onChangeText={setCarbs} placeholder='Carb' placeholderTextColor='#666' />
-        <TextInput style={styles.macro} keyboardType='numeric' value={fat} onChangeText={setFat} placeholder='Grassi' placeholderTextColor='#666' />
-        <TextInput style={styles.macro} keyboardType='numeric' value={cal} onChangeText={setCal} placeholder='Kcal' placeholderTextColor='#666' />
+        <TextInput style={styles.macro} keyboardType='numeric' value={protein} onChangeText={setProtein} placeholder='Prot' placeholderTextColor={colors.textMuted} />
+        <TextInput style={styles.macro} keyboardType='numeric' value={carbs} onChangeText={setCarbs} placeholder='Carb' placeholderTextColor={colors.textMuted} />
+        <TextInput style={styles.macro} keyboardType='numeric' value={fat} onChangeText={setFat} placeholder='Grassi' placeholderTextColor={colors.textMuted} />
+        <TextInput style={styles.macro} keyboardType='numeric' value={cal} onChangeText={setCal} placeholder='Kcal' placeholderTextColor={colors.textMuted} />
       </View>
       <Pressable style={styles.saveBtn} onPress={persist}><Text style={styles.saveTxt}>Salva</Text></Pressable>
       <Pressable style={styles.deleteBtn} onPress={del}><Text style={styles.deleteTxt}>Elimina</Text></Pressable>
@@ -59,14 +60,14 @@ export default function EditDiaryEntryModal(){
 }
 
 const styles = StyleSheet.create({
-  container:{ padding:16 },
-  title:{ fontSize:18, fontWeight:'600', color:'#111', marginBottom:12 },
-  input:{ borderWidth:1, borderColor:'#ccc', borderRadius:8, padding:10, marginBottom:12, color:'#111', backgroundColor:'#fff' },
-  row:{ flexDirection:'row', gap:8, marginBottom:12 },
-  macro:{ flex:1, borderWidth:1, borderColor:'#ccc', borderRadius:8, padding:10, color:'#111', backgroundColor:'#fff' },
-  saveBtn:{ backgroundColor:'#10b981', padding:14, borderRadius:10, alignItems:'center', marginTop:4 },
-  saveTxt:{ color:'#fff', fontWeight:'600' },
-  deleteBtn:{ backgroundColor:'#ef4444', padding:12, borderRadius:10, alignItems:'center', marginTop:12 },
-  deleteTxt:{ color:'#fff', fontWeight:'600' },
-  missing:{ color:'#111', padding:20 }
+  container:{ padding:18, backgroundColor:colors.background },
+  title:{ fontSize:20, fontWeight:'600', color:colors.textPrimary, marginBottom:16, letterSpacing:0.3 },
+  input:{ borderWidth:1, borderColor:colors.borderAlt, borderRadius:12, padding:12, marginBottom:14, color:colors.textPrimary, backgroundColor:colors.card },
+  row:{ flexDirection:'row', gap:10, marginBottom:16 },
+  macro:{ flex:1, borderWidth:1, borderColor:colors.borderAlt, borderRadius:12, padding:12, color:colors.textPrimary, backgroundColor:colors.card, textAlign:'center' },
+  saveBtn:{ backgroundColor:colors.accent, padding:16, borderRadius:14, alignItems:'center', marginTop:4 },
+  saveTxt:{ color:'#fff', fontWeight:'600', letterSpacing:0.5 },
+  deleteBtn:{ backgroundColor:colors.cardAlt, padding:14, borderRadius:14, alignItems:'center', marginTop:14, borderWidth:1, borderColor:colors.border },
+  deleteTxt:{ color:'#ef4444', fontWeight:'600', letterSpacing:0.5 },
+  missing:{ color:colors.textPrimary, padding:20 }
 });
