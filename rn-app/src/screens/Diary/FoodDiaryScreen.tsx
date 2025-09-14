@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, SectionList, Pressable, ActivityIndicator, RefreshControl, TextInput, KeyboardAvoidingView, Platform, ScrollView, useWindowDimensions } from 'react-native';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, RefreshControl, TextInput, KeyboardAvoidingView, Platform, ScrollView, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
-import DailyTotalsDisplay from '../../components/DailyTotalsDisplay';
 import { useDiaryStore } from '../../store/diaryStore';
 import { useFoodStore } from '../../store/foodStore';
 
@@ -22,7 +22,8 @@ export default function FoodDiaryScreen({ navigation }: Props) {
   const { search, setSearch, runSearch, results } = useFoodStore();
   const [quick, setQuick] = useState<QuickAddState>({ name:'', quantity:'100', calories:'0', protein:'0', carbs:'0', fat:'0' });
   const [adding, setAdding] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(false);
+  // panel removed; add form always visible
+  const [panelOpen, setPanelOpen] = useState(false); // legacy flag not used anymore
   const [addingQuick, setAddingQuick] = useState(false);
 
   useEffect(() => { load(); }, [date]);
@@ -141,112 +142,80 @@ export default function FoodDiaryScreen({ navigation }: Props) {
   const { width } = useWindowDimensions();
   const contentWrapperStyle = useMemo(() => [styles.contentWrapper, width>720 && styles.contentWrapperWide], [width]);
 
+  const insets = useSafeAreaInsets();
   return (
     <View style={styles.container}>
       <View style={contentWrapperStyle}>
-      <View style={styles.headerRow}>
+      <View style={[styles.headerRow,{marginTop: insets.top + 8}]}>        
         <View style={styles.dateNav}>          
           <Pressable onPress={()=>shiftDate(-1)} style={styles.navBtn}><Text style={styles.navBtnText}>{'<'}</Text></Pressable>
           <Text style={styles.title}>{date}</Text>
           <Pressable onPress={()=>shiftDate(1)} style={styles.navBtn}><Text style={styles.navBtnText}>{'>'}</Text></Pressable>
         </View>
-        <Pressable onPress={() => navigation.navigate('BarcodeScanner')}><Text style={styles.scan}>Scanner</Text></Pressable>
       </View>
-      {loading && entries.length === 0 ? (
-  <ActivityIndicator color={colors.accent} />
-      ) : (
-        <SectionList
-          sections={sections}
-          refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.accent} />}
-          keyExtractor={keyExtractor}
-          ListEmptyComponent={<Text style={styles.empty}>Nessuna voce per oggi</Text>}
-          getItemLayout={getItemLayout}
-          renderItem={({item}:any) => (
-            <View style={styles.entry}> 
-              <View style={{flex:1}}>
-                <Text style={styles.entryText}>{item.food_name_snapshot}</Text>
-                <Text style={styles.entryQty}>{item.consumed_quantity}{item.consumed_unit} · {Math.round(item.calories_calculated)} kcal</Text>
-              </View>
-              <View style={styles.rowActions}>                
-                <Pressable onPress={()=>navigation.navigate('EditDiaryEntry',{ id: item.id })}><Text style={styles.action}>✎</Text></Pressable>
-                <Pressable onPress={()=>removeEntry(item.id)}><Text style={styles.actionDelete}>✕</Text></Pressable>
-              </View>
-            </View>
-          )}
-          renderSectionHeader={({section}) => (
-            <View style={styles.sectionHeader}> 
-              <Text style={styles.sectionTitle}>{section.title}</Text>
-              <Text style={styles.sectionSub}>{section.meta}</Text>
-            </View>
-          )}
-          initialNumToRender={25}
-          stickySectionHeadersEnabled
-          removeClippedSubviews
-          windowSize={5}
-          ListHeaderComponent={<View><DailyTotalsDisplay /></View>}
-        />
-      )}
-      <Pressable style={styles.fab} onPress={()=>setPanelOpen(true)}><Text style={styles.fabPlus}>+</Text></Pressable>
-
-      {panelOpen && (
-        <View style={styles.overlay}>
-          <KeyboardAvoidingView style={styles.panelWrapper} behavior={Platform.OS==='ios'?'padding':undefined}>
-            <View style={styles.panelBox}>
-              <View style={styles.panelTopBar}>
-                <Pressable onPress={()=>setPanelOpen(false)} style={styles.closeHit}><Ionicons name="close" size={22} color={colors.textPrimary}/></Pressable>
-                <Text style={styles.panelTitle}>Aggiungi alimento</Text>
-              </View>
-              <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={{paddingBottom:40}}>
-                <View style={styles.searchBar}> 
-                  <Ionicons name="search" size={16} color={colors.textMuted} style={{marginRight:8}} />
-                  <TextInput
-                    placeholder='Cerca alimento'
-                    placeholderTextColor={colors.textMuted}
-                    style={styles.searchInput}
-                    value={search}
-                    onChangeText={(t:string)=>{ setSearch(t); runSearch(t); }}
-                  />
-                </View>
-                {results.length>0 && (
-                  <View style={styles.resultsDropdown}>
-                    {results.slice(0,6).map(r => (
-                      <Pressable key={r.id} style={styles.resultRow} onPress={()=>addFromSearch(r)}>
-                        <Text style={styles.resultText}>{r.name}</Text>
-                        <Text style={styles.resultCals}>{Math.round(r.calories||0)} kcal</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                )}
-                <Pressable style={styles.actionRow} onPress={()=>{ setPanelOpen(false); navigation.navigate('BarcodeScanner'); }}>
-                  <View style={styles.actionIcon}><Ionicons name='barcode-outline' size={20} color={colors.accent} /></View>
-                  <Text style={styles.actionLabel}>Scansiona codice a barre</Text>
-                  <Ionicons name='chevron-forward' size={18} color={colors.textMuted} />
-                </Pressable>
-                <Pressable style={styles.actionRow}>
-                  <View style={styles.actionIcon}><Ionicons name='sparkles-outline' size={20} color={colors.accent} /></View>
-                  <View style={{flex:1}}>
-                    <Text style={styles.actionLabel}>Analizza pasto con AI</Text>
-                    <Text style={styles.actionSub}>Nuova funzione</Text>
-                  </View>
-                  <Ionicons name='chevron-forward' size={18} color={colors.textMuted} />
-                </Pressable>
-                <Text style={styles.recentsHeader}>Ultimi alimenti</Text>
-                {recentFoods.map(r => (
-                  <View key={r.id} style={styles.recentCard}>
-                    <View style={styles.thumb}>{chooseEmoji(r.food_name_snapshot)}</View>
-                    <View style={{flex:1}}>
-                      <Text style={styles.recentName}>{r.food_name_snapshot}</Text>
-                      <Text style={styles.recentQty}>100g</Text>
-                    </View>
-                    <Pressable disabled={addingQuick} onPress={()=>addFromEntryTemplate(r)} style={styles.addCircle}><Text style={styles.addCircleTxt}>+</Text></Pressable>
-                  </View>
-                ))}
-                {recentFoods.length===0 && <Text style={styles.noRecent}>Nessun alimento recente</Text>}
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
+      {/* Add form now primary */}
+      <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={{paddingBottom:40}}>
+        <View style={styles.searchBar}> 
+          <Ionicons name="search" size={16} color={colors.textMuted} style={{marginRight:8}} />
+          <TextInput
+            placeholder='Cerca alimento'
+            placeholderTextColor={colors.textMuted}
+            style={styles.searchInput}
+            value={search}
+            onChangeText={(t:string)=>{ setSearch(t); runSearch(t); }}
+          />
         </View>
-      )}
+        {results.length>0 && (
+          <View style={styles.resultsDropdown}>
+            {results.slice(0,6).map(r => (
+              <Pressable key={r.id} style={styles.resultRow} onPress={()=>addFromSearch(r)}>
+                <Text style={styles.resultText}>{r.name}</Text>
+                <Text style={styles.resultCals}>{Math.round(r.calories||0)} kcal</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+        <Pressable style={styles.actionRow} onPress={()=>navigation.navigate('BarcodeScanner')}>
+          <View style={styles.actionIcon}><Ionicons name='barcode-outline' size={20} color={colors.accent} /></View>
+          <Text style={styles.actionLabel}>Scansiona codice a barre</Text>
+          <Ionicons name='chevron-forward' size={18} color={colors.textMuted} />
+        </Pressable>
+        <Pressable style={styles.actionRow}>
+          <View style={styles.actionIcon}><Ionicons name='sparkles-outline' size={20} color={colors.accent} /></View>
+          <View style={{flex:1}}>
+            <Text style={styles.actionLabel}>Analizza pasto con AI</Text>
+            <Text style={styles.actionSub}>Nuova funzione</Text>
+          </View>
+          <Ionicons name='chevron-forward' size={18} color={colors.textMuted} />
+        </Pressable>
+        <Text style={styles.recentsHeader}>Ultimi alimenti</Text>
+        {recentFoods.map(r => (
+          <View key={r.id} style={styles.recentCard}>
+            <View style={styles.thumb}>{chooseEmoji(r.food_name_snapshot)}</View>
+            <View style={{flex:1}}>
+              <Text style={styles.recentName}>{r.food_name_snapshot}</Text>
+              <Text style={styles.recentQty}>100g</Text>
+            </View>
+            <Pressable disabled={addingQuick} onPress={()=>addFromEntryTemplate(r)} style={styles.addCircle}><Text style={styles.addCircleTxt}>+</Text></Pressable>
+          </View>
+        ))}
+        {recentFoods.length===0 && <Text style={styles.noRecent}>Nessun alimento recente</Text>}
+        <Text style={[styles.recentsHeader,{marginTop:24}]}>Voci di oggi</Text>
+        {loading && entries.length===0 && <ActivityIndicator color={colors.accent} />}
+        {!loading && entries.length===0 && <Text style={styles.empty}>Nessuna voce per oggi</Text>}
+        {entries.map(item => (
+          <View key={item.id} style={styles.entry}> 
+            <View style={{flex:1}}>
+              <Text style={styles.entryText}>{item.food_name_snapshot}</Text>
+              <Text style={styles.entryQty}>{item.consumed_quantity}{item.consumed_unit} · {Math.round(item.calories_calculated)} kcal</Text>
+            </View>
+            <View style={styles.rowActions}>                
+              <Pressable onPress={()=>navigation.navigate('EditDiaryEntry',{ id: item.id })}><Text style={styles.action}>✎</Text></Pressable>
+              <Pressable onPress={()=>removeEntry(item.id)}><Text style={styles.actionDelete}>✕</Text></Pressable>
+            </View>
+          </View>
+        ))}
+      </ScrollView>
       </View>
     </View>
   );
