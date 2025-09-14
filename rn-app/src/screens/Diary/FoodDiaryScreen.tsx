@@ -18,7 +18,7 @@ interface QuickAddState {
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 type Props = { navigation: NativeStackNavigationProp<any> };
 export default function FoodDiaryScreen({ navigation }: Props) {
-  const { entries, load, loading, date, addEntry, setDate, removeEntry } = useDiaryStore();
+  const { entries, load, loading, date, addEntry, setDate, removeEntry, compositeMeals, loadCompositeMeals, loadingComposite } = useDiaryStore();
   const { search, setSearch, runSearch, results } = useFoodStore();
   const [quick, setQuick] = useState<QuickAddState>({ name:'', quantity:'100', calories:'0', protein:'0', carbs:'0', fat:'0' });
   const [adding, setAdding] = useState(false);
@@ -26,7 +26,7 @@ export default function FoodDiaryScreen({ navigation }: Props) {
   const [panelOpen, setPanelOpen] = useState(false); // legacy flag not used anymore
   const [addingQuick, setAddingQuick] = useState(false);
 
-  useEffect(() => { load(); }, [date]);
+  useEffect(() => { load(); if (loadCompositeMeals) loadCompositeMeals(); }, [date]);
 
   const [mealType, setMealType] = useState<string|null>(null);
   const [notes, setNotes] = useState('');
@@ -49,15 +49,19 @@ export default function FoodDiaryScreen({ navigation }: Props) {
   const canAdd = errors.length===0 && !adding;
 
   // Build recent foods from latest diary entries (unique by food_name_snapshot)
-  const recentFoods = useMemo(()=>{
+  // Build combined recent foods + composite meals (as unified cards)
+  const combinedItems = useMemo(()=>{
+    const recent: any[] = [];
     const seen = new Set<string>();
-    const list: any[] = [];
     [...entries].reverse().forEach(e=>{
       const key = e.food_name_snapshot?.toLowerCase();
-      if (key && !seen.has(key)) { seen.add(key); list.push(e); }
+      if (key && !seen.has(key)) { seen.add(key); recent.push({ type:'food', data:e }); }
     });
-    return list.slice(0,5);
-  }, [entries]);
+    const foodsLimited = recent.slice(0,5);
+    // Flatten composite meals items so each identified dish appears like a recent food
+    const compItems = (compositeMeals||[]).flatMap((m:any)=> (m.items||[]).map((it:any)=> ({ type:'compositeItem', data: it, parent: m })));
+    return [...foodsLimited, ...compItems];
+  }, [entries, compositeMeals]);
 
   const addFromEntryTemplate = async (entryTemplate:any) => {
     if (addingQuick) return;
@@ -102,6 +106,26 @@ export default function FoodDiaryScreen({ navigation }: Props) {
         mealType: null
       } as any);
       setSearch('');
+    } finally { setAddingQuick(false); }
+  };
+
+  const addFromCompositeItem = async (it:any) => {
+    if (addingQuick) return;
+    setAddingQuick(true);
+    try {
+      await addEntry({
+        foodName: it.item_name,
+        consumedQuantity: it.quantity,
+        consumedUnit: it.unit || 'g',
+        calculatedNutrients: {
+          calories: it.calories || 0,
+          protein: it.protein_g || 0,
+          carbohydrates_total: it.carbohydrates_g || 0,
+          fat_total: it.fat_g || 0
+        },
+        consumptionDate: date,
+        mealType: null
+      } as any);
     } finally { setAddingQuick(false); }
   };
 
@@ -152,6 +176,7 @@ export default function FoodDiaryScreen({ navigation }: Props) {
           <Text style={styles.title}>{date}</Text>
           <Pressable onPress={()=>shiftDate(1)} style={styles.navBtn}><Text style={styles.navBtnText}>{'>'}</Text></Pressable>
         </View>
+  <Text style={styles.myDiaryLabel}>Diario Alimentare</Text>
       </View>
       {/* Add form now primary */}
       <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={{paddingBottom:40}}>
@@ -180,26 +205,55 @@ export default function FoodDiaryScreen({ navigation }: Props) {
           <Text style={styles.actionLabel}>Scansiona codice a barre</Text>
           <Ionicons name='chevron-forward' size={18} color={colors.textMuted} />
         </Pressable>
-        <Pressable style={styles.actionRow}>
+        <Pressable style={styles.actionRow} onPress={()=>navigation.navigate('MealAnalysis')}>
           <View style={styles.actionIcon}><Ionicons name='sparkles-outline' size={20} color={colors.accent} /></View>
           <View style={{flex:1}}>
-            <Text style={styles.actionLabel}>Analizza pasto con AI</Text>
+            <Text style={styles.actionLabel}>Analizza pasto</Text>
             <Text style={styles.actionSub}>Nuova funzione</Text>
           </View>
           <Ionicons name='chevron-forward' size={18} color={colors.textMuted} />
         </Pressable>
-        <Text style={styles.recentsHeader}>Ultimi alimenti</Text>
-        {recentFoods.map(r => (
-          <View key={r.id} style={styles.recentCard}>
-            <View style={styles.thumb}>{chooseEmoji(r.food_name_snapshot)}</View>
-            <View style={{flex:1}}>
-              <Text style={styles.recentName}>{r.food_name_snapshot}</Text>
-              <Text style={styles.recentQty}>100g</Text>
-            </View>
-            <Pressable disabled={addingQuick} onPress={()=>addFromEntryTemplate(r)} style={styles.addCircle}><Text style={styles.addCircleTxt}>+</Text></Pressable>
-          </View>
-        ))}
-        {recentFoods.length===0 && <Text style={styles.noRecent}>Nessun alimento recente</Text>}
+        <Text style={styles.recentsHeader}>Alimenti Recenti & Pasti</Text>
+        {combinedItems.map(item => {
+          if (item.type==='food') {
+            const r = item.data;
+            return (
+              <View key={`f-${r.id}`} style={styles.recentCard}>
+                <View style={styles.thumb}>{chooseEmoji(r.food_name_snapshot, {
+                  calories: r.calories_calculated,
+                  protein: r.protein_g_calculated,
+                  carbs: r.carbohydrates_total_g_calculated,
+                  fat: r.fat_total_g_calculated
+                })}</View>
+                <View style={{flex:1}}>
+                  <Text style={styles.recentName}>{r.food_name_snapshot}</Text>
+                  <Text style={styles.recentQty}>{r.consumed_quantity}{r.consumed_unit} · {Math.round(r.calories_calculated||0)} kcal</Text>
+                </View>
+                {/* Add button removed as requested */}
+              </View>
+            );
+          }
+          if (item.type==='compositeItem') {
+            const it = item.data; // composite_meal_item row
+            return (
+              <View key={`ci-${it.id}`} style={styles.recentCard}>
+                <View style={styles.thumb}>{chooseEmoji(it.item_name, {
+                  calories: it.calories,
+                  protein: it.protein_g,
+                  carbs: it.carbohydrates_g,
+                  fat: it.fat_g
+                })}</View>
+                <View style={{flex:1}}>
+                  <Text style={styles.recentName}>{it.item_name}</Text>
+                  <Text style={styles.recentQty}>{it.quantity}{it.unit} · {Math.round(it.calories)} kcal · P{Math.round(it.protein_g)} C{Math.round(it.carbohydrates_g)} F{Math.round(it.fat_g)}</Text>
+                </View>
+                {/* Add button removed as requested */}
+              </View>
+            );
+          }
+          return null;
+        })}
+        {combinedItems.length===0 && !loadingComposite && <Text style={styles.noRecent}>Nessun alimento o pasto AI</Text>}
         <Text style={[styles.recentsHeader,{marginTop:24}]}>Voci di oggi</Text>
         {loading && entries.length===0 && <ActivityIndicator color={colors.accent} />}
         {!loading && entries.length===0 && <Text style={styles.empty}>Nessuna voce per oggi</Text>}
@@ -250,6 +304,7 @@ const styles = StyleSheet.create({
   dateNav:{ flexDirection:'row', alignItems:'center', gap:8 },
   navBtn:{ backgroundColor:colors.cardAlt, paddingHorizontal:10, paddingVertical:6, borderRadius:8 },
   navBtnText:{ color:colors.accent, fontSize:16, fontWeight:'700' },
+  myDiaryLabel:{ color:colors.accent, fontWeight:'700', fontSize:15, marginLeft:12, letterSpacing:0.5 },
   entry:{ padding:12, backgroundColor:colors.card, borderRadius:14, marginBottom:10, flexDirection:'row', justifyContent:'space-between', borderWidth:1, borderColor:colors.border },
   entryText:{ color:colors.textPrimary, fontSize:14, fontWeight:'500' },
   entryQty:{ color:colors.textMuted, fontSize:11, marginTop:2 },
@@ -302,14 +357,68 @@ const styles = StyleSheet.create({
   addCircle:{ backgroundColor:colors.card, width:40, height:40, borderRadius:14, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:colors.borderAlt },
   addCircleTxt:{ color:colors.accent, fontSize:24, fontWeight:'700', marginTop:-2 },
   noRecent:{ color:colors.textMuted, fontSize:12, textAlign:'center', marginTop:24 }
+  ,compositeCard:{ backgroundColor:colors.cardAlt, padding:14, borderRadius:16, marginBottom:12, borderWidth:1, borderColor:colors.border }
+  ,compositeTitle:{ color:colors.textPrimary, fontSize:14, fontWeight:'600', flex:1, paddingRight:8 }
+  ,compositeMeta:{ color:colors.textMuted, fontSize:11, fontWeight:'500' }
+  ,compItemRow:{ flexDirection:'row', justifyContent:'space-between', marginBottom:4 }
+  ,compItemName:{ color:colors.textPrimary, fontSize:13, flex:1, paddingRight:6 }
+  ,compItemVals:{ color:colors.textMuted, fontSize:11 }
+  ,compNotes:{ color:colors.textSecondary, fontSize:11, marginTop:6, fontStyle:'italic' }
 });
 
-function chooseEmoji(name:string){
+function chooseEmoji(name:string, macros?: { calories?: number; protein?: number; carbs?: number; fat?: number }){
   const lower = (name||'').toLowerCase();
-  let emoji = '🍽️';
-  if (lower.includes('pollo')||lower.includes('chicken')) emoji='🍗';
-  else if (lower.includes('riso')||lower.includes('rice')) emoji='🍚';
-  else if (lower.includes('brocc')) emoji='🥦';
-  else if (lower.includes('pane')||lower.includes('bread')) emoji='🍞';
-  return <Text style={{fontSize:20}}>{emoji}</Text>;
+  const tokenized = lower.replace(/[^a-zA-Zàèéìòùç0-9 ]/g,' ').split(/\s+/).filter(Boolean);
+  // Core keyword groups (small set). Adding new words here auto-works without changing logic.
+  const groups: { emoji: string; words: string[] }[] = [
+    { emoji:'🍗', words:['pollo','chicken','tacchin','tacchino','petto','manzo','bovino','beef','steak','maiale','pork','prosciutt','salame','bresaola'] },
+    { emoji:'🐟', words:['pesce','salmone','tonno','merluzz','orata','branzino','fish','tuna','salmon','cod'] },
+    { emoji:'🥚', words:['uovo','uova','egg'] },
+    { emoji:'🍚', words:['riso','rice','risott'] },
+    { emoji:'�', words:['pasta','spaghett','penne','fusill','maccher','lasagn','gnocchi','tagliatell'] },
+    { emoji:'🍕', words:['pizza'] },
+    { emoji:'🍞', words:['pane','bread','baguette','panino','focaccia'] },
+    { emoji:'🥔', words:['patata','patate','potato','patatin','fries'] },
+    { emoji:'�', words:['insalata','salad','lattuga','lettuce','crudita'] },
+    { emoji:'🥦', words:['brocc','broccolo','cavolfior','cavolo','zucchin','verza'] },
+    { emoji:'🥕', words:['carota','carrot'] },
+    { emoji:'🍎', words:['mela','apple'] },
+    { emoji:'🍌', words:['banana'] },
+    { emoji:'🍓', words:['fragola','strawberry','frago'] },
+    { emoji:'🍊', words:['arancia','orange','mandarino','clementin'] },
+    { emoji:'🥛', words:['yogurt','yoghurt','latte','milk','kefir'] },
+    { emoji:'�', words:['formagg','cheese','grana','parmig','mozzarella','caciotta'] },
+    { emoji:'🫘', words:['fagiol','legum','bean','lentil','ceci','chickpea','pisell'] },
+    { emoji:'🥣', words:['avena','oat','porridge','fiocc'] },
+    { emoji:'🥞', words:['pancake','waffle','crepe'] },
+    { emoji:'🥜', words:['arachid','peanut','noccio','mandor','anacard','pistac'] },
+    { emoji:'🍫', words:['cioccol','chocolate','cacao','barretta','bar ','protein bar'] },
+    { emoji:'🍪', words:['biscott','cookie'] },
+    { emoji:'🍨', words:['gelato','ice','sorbetto'] },
+    { emoji:'🍰', words:['torta','cake','crostat','cheesecake'] },
+    { emoji:'💧', words:['acqua','water'] },
+    { emoji:'☕', words:['caffe','coffee','espresso','cappucc'] },
+  ];
+  for (const g of groups) {
+    if (tokenized.some(t => g.words.some(w => t.startsWith(w)))) return <Text style={{fontSize:20}}>{g.emoji}</Text>;
+  }
+  // Macro-based heuristic fallback if keywords not matched
+  if (macros && macros.calories && macros.calories > 0) {
+    const pCals = (macros.protein||0)*4;
+    const cCals = (macros.carbs||0)*4;
+    const fCals = (macros.fat||0)*9;
+    const total = pCals + cCals + fCals;
+    if (total > 0) {
+      const pShare = pCals/total, cShare = cCals/total, fShare = fCals/total;
+      if (pShare > 0.35 && pShare > cShare && pShare > fShare) return <Text style={{fontSize:20}}>🍗</Text>;
+      if (cShare > 0.45 && cShare > pShare && cShare > fShare) return <Text style={{fontSize:20}}>🍚</Text>;
+      if (fShare > 0.5) return <Text style={{fontSize:20}}>🧀</Text>;
+    }
+  }
+  // Default
+  return <Text style={{fontSize:20}}>🍽️</Text>;
+}
+
+function addFromCompositeItem(it:any){
+  // This helper will be replaced inline by closure if needed; placeholder kept intentionally if refactoring later
 }

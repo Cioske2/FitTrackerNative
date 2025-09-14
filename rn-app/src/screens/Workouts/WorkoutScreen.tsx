@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Dimensions, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, Dimensions, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View, StyleSheet, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LineChart } from 'react-native-chart-kit';
 import { colors } from '../../theme/colors';
 import { useWorkoutStore } from '../../store/workoutStore';
+import workoutParser from '../../services/workoutParser';
 import Card from '../../components/layout/Card';
 
 interface GroupedDay { date: string; items: any[] }
@@ -16,6 +17,12 @@ export default function WorkoutScreen() {
   const [dayModal, setDayModal] = useState<GroupedDay | null>(null);
   const [form, setForm] = useState({ exerciseName: '', sets: '', reps: '', weight: '' });
   const [submitting, setSubmitting] = useState(false);
+  // Parsing AI modal
+  const [parseModal, setParseModal] = useState(false);
+  const [parseText, setParseText] = useState('');
+  const [parsing, setParsing] = useState(false);
+  const [parsed, setParsed] = useState<any[]>([]);
+  const [savingParsed, setSavingParsed] = useState(false);
     const grouped = useMemo(() => groupByDate(workouts), [workouts]);
     const [showAllDays, setShowAllDays] = useState(false);
   const exerciseNames = useMemo(() => Array.from(new Set(workouts.map(w => w.exerciseName))).sort(), [workouts]);
@@ -59,6 +66,9 @@ export default function WorkoutScreen() {
           <Text style={styles.addBtnSmallTxt}>＋</Text>
         </Pressable>
       </View>
+      <Pressable style={styles.aiParseBtn} onPress={()=>setParseModal(true)}>
+        <Text style={styles.aiParseBtnTxt}>Parsing AI</Text>
+      </Pressable>
       {loading && workouts.length === 0 && <ActivityIndicator color={colors.accent} />}
       {!loading && grouped.length === 0 && <Text style={styles.empty}>Nessun allenamento</Text>}
       {(showAllDays ? grouped : grouped.slice(0,6)).map(g => (
@@ -156,6 +166,69 @@ export default function WorkoutScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+      {/* Modal: Parsing AI */}
+      <Modal visible={parseModal} animationType="fade" transparent onRequestClose={()=>{ if(!parsing) setParseModal(false); }}>
+        <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined} style={{flex:1, justifyContent:'center'}}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>Parsing Allenamento (AI)</Text>
+              <TextInput
+                multiline
+                placeholder="Incolla o scrivi il tuo allenamento in linguaggio naturale\nEsempio: \nPanca piana 4x8 60kg\nRematore bilanciere 3x10 50kg 1'\nCurl manubri 3x12 12kg"
+                placeholderTextColor={colors.textMuted}
+                style={[styles.input,{height:140,textAlignVertical:'top'}]}
+                value={parseText}
+                onChangeText={setParseText}
+              />
+              <View style={{flexDirection:'row', gap:12, marginBottom: parsed.length?12:4}}>
+                <Pressable style={[styles.btn, styles.btnSecondary, (parsing || !parseText.trim()) && styles.btnDisabled]} disabled={parsing || !parseText.trim()} onPress={async ()=>{
+                  setParsing(true); setParsed([]);
+                  try {
+                    const res = await workoutParser.parseWorkout(parseText.trim());
+                    setParsed(res);
+                    if(res.length===0) Alert.alert('Nessun esercizio', 'Non sono stati riconosciuti esercizi validi.');
+                  } catch(e:any){ Alert.alert('Errore parsing', e.message||'Impossibile parsificare'); }
+                  finally { setParsing(false); }
+                }}>
+                  {parsing? <ActivityIndicator color={colors.accent}/> : <Text style={styles.btnTxt}>Analizza</Text>}
+                </Pressable>
+                <Pressable style={[styles.btn, styles.btnCancel]} onPress={()=>!parsing && setParseModal(false)}><Text style={styles.btnTxt}>Chiudi</Text></Pressable>
+              </View>
+              {parsed.length>0 && (
+                <ScrollView style={{maxHeight:230, marginBottom:12}}>
+                  {parsed.map((p,i)=>(
+                    <View key={i} style={styles.parsedRow}>
+                      <Text style={styles.parsedExercise}>{p.exercise}</Text>
+                      <Text style={styles.parsedMeta}>{p.sets}x{p.reps}{p.weight?` @ ${p.weight}kg`:''}{p.rest?` · ${p.rest}`:''}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+              {parsed.length>0 && (
+                <Pressable style={[styles.btn, styles.btnPrimary, savingParsed && styles.btnDisabled]} disabled={savingParsed} onPress={async ()=>{
+                  setSavingParsed(true);
+                  try {
+                    for(const p of parsed){
+                      await add({
+                        exerciseName: p.exercise,
+                        sets: p.sets,
+                        reps: p.reps,
+                        weight: p.weight||0,
+                        date: new Date().toISOString().slice(0,10),
+                        notes: p.notes || ''
+                      });
+                    }
+                    setParseModal(false); setParseText(''); setParsed([]);
+                  } catch(e:any){ Alert.alert('Salvataggio fallito', e.message||'Errore sconosciuto'); }
+                  finally { setSavingParsed(false); }
+                }}>
+                  <Text style={styles.btnPrimaryTxt}>{savingParsed? '...' : `Salva ${parsed.length}`}</Text>
+                </Pressable>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
       {/* Modal: Dettaglio Giorno */}
       <Modal visible={!!dayModal} animationType="fade" transparent onRequestClose={() => setDayModal(null)}>
@@ -218,7 +291,7 @@ function buildExerciseSeries(workouts: any[], exercise: string | null): Series {
 
 // Styles
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20 },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: 20, paddingTop: 24 },
   title: { fontSize: 26, fontWeight: '700', color: colors.textPrimary, marginBottom: 12 },
   sectionHeading: { fontSize: 16, fontWeight: '600', color: colors.textPrimary, letterSpacing: 0.5 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
@@ -263,4 +336,10 @@ const styles = StyleSheet.create({
   dayItemMeta: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
   deleteBtn: { paddingHorizontal: 10, paddingVertical: 6 },
   deleteBtnTxt: { fontSize: 18 },
+  aiParseBtn:{ alignSelf:'flex-start', backgroundColor: colors.cardAlt, paddingHorizontal:16, paddingVertical:8, borderRadius:18, borderWidth:1, borderColor: colors.borderAlt, marginBottom:12 },
+  aiParseBtnTxt:{ color: colors.accent, fontWeight:'600', fontSize:13, letterSpacing:0.5 },
+  btnSecondary:{ backgroundColor: colors.cardAlt },
+  parsedRow:{ paddingVertical:8, borderBottomWidth:1, borderBottomColor: colors.borderAlt },
+  parsedExercise:{ color: colors.textPrimary, fontSize:14, fontWeight:'600' },
+  parsedMeta:{ color: colors.textSecondary, fontSize:12, marginTop:2 }
 });

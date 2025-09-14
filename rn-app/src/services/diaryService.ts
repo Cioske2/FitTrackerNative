@@ -100,6 +100,48 @@ export const diaryService = {
     if (error) throw new Error(error.message);
     return true;
   },
+  // ---- Composite meals (AI analyzed) ----
+  addCompositeMeal: async (mealData: { name?:string; mealType?:string; date:string; totals:{calories:number; protein:number; carbs:number; fat:number}; items: { name:string; originalName?:string; quantity:number; unit:string; calories:number; protein:number; carbs:number; fat:number; foodId?:number|null; source?:string|null }[]; notes?:string|null }) => {
+    const header = {
+      name: mealData.name || `Pasto ${mealData.date}`,
+      meal_type: mealData.mealType || 'AI',
+      consumption_date: mealData.date,
+      total_calories: mealData.totals.calories,
+      total_protein_g: mealData.totals.protein,
+      total_carbohydrates_g: mealData.totals.carbs,
+      total_fat_g: mealData.totals.fat,
+      notes: mealData.notes || null
+    } as any;
+    const { data: insertedMeal, error: mealErr } = await supabase.from('composite_meals').insert(header).select().single();
+    if (mealErr) throw new Error(mealErr.message);
+    if (!insertedMeal?.id) throw new Error('Insert composite meal failed');
+    const itemsPayload = mealData.items.map(i => ({
+      composite_meal_id: insertedMeal.id,
+      item_name: i.name,
+      quantity: i.quantity,
+      unit: i.unit,
+      calories: i.calories,
+      protein_g: i.protein,
+      carbohydrates_g: i.carbs,
+      fat_g: i.fat,
+      food_database_id: i.foodId || null,
+      source_database: i.source || null,
+      original_cv_name: i.originalName || i.name
+    }));
+    const { error: itemsErr } = await supabase.from('composite_meal_items').insert(itemsPayload);
+    if (itemsErr) { await supabase.from('composite_meals').delete().eq('id', insertedMeal.id); throw new Error(itemsErr.message); }
+    return insertedMeal;
+  },
+  getCompositeMealsForDate: async (dateString: string) => {
+    const { data: meals, error } = await supabase.from('composite_meals').select('*').eq('consumption_date', dateString).order('created_at', { ascending: true });
+    if (error) throw new Error(error.message);
+    if (!meals || meals.length===0) return [];
+    const withItems = await Promise.all(meals.map(async (m:any) => {
+      const { data: items, error: itemsErr } = await supabase.from('composite_meal_items').select('*').eq('composite_meal_id', m.id).order('created_at', { ascending: true });
+      return { ...m, items: itemsErr ? [] : (items||[]) };
+    }));
+    return withItems;
+  }
 };
 
 export default diaryService;

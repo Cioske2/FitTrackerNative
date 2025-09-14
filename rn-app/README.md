@@ -1,31 +1,68 @@
-# FitTracker Native (Expo)
 
-Base di partenza per migrazione da progetto React Web.
+# FitTrackerNative React Native (Expo) Setup
 
-## Comandi
-```bash
+## Prerequisites
+- Node.js (18+ recommended)
+- Yarn or npm
+- Expo CLI (`npm install -g expo-cli`)
+- Supabase project & credentials
+- Gemini API key (for meal analysis)
+- OpenRouter API key (for workout parsing)
+- (Optional) Spoonacular API key (for fallback food analysis)
+
+## 1. Install dependencies
+
+```
+yarn install
+# or
 npm install
-npm run start
 ```
 
-## Struttura principale
-Vedi cartelle in `src/` per navigatori, screens, store e services.
+## 2. Environment Variables
 
-## Env
-Creare file `.env` con variabili:
-```
-SUPABASE_URL=...
-SUPABASE_ANON_KEY=...
-CLARIFAI_API_KEY=...
-OPENFOOD_API_KEY=...
-GEMINI_API_KEY=...
-```
-(Non inserire chiavi segrete service role.)
+Create a `.env` file in `rn-app/` with the following:
 
-## TODO Migrazione
-- Portare logica servizi esistenti in `services/`
-- Implementare fetch reali per diario / alimenti
-- Integrare chart kit nelle schermate Progress/Dashboard
-- Aggiungere dark theme dinamico e preferenze utente
-- Gestire ruoli (admin) in store auth
+```
+SUPABASE_URL=your-supabase-url
+SUPABASE_ANON_KEY=your-supabase-anon-key
+GEMINI_API_KEY=your-gemini-api-key
+OPENROUTER_API_KEY=your-openrouter-api-key
+SPOONACULAR_API_KEY=your-spoonacular-api-key # (optional)
+```
+
+> You may need to restart the Expo server after changing `.env`.
+
+## 3. Running the App
+
+```
+cd rn-app
+expo start
+```
+
+Scan the QR code with Expo Go or run on an emulator.
+
+## 4. Notes
+- All data is real, stored in Supabase (no mock data).
+- For AI features, ensure Gemini and OpenRouter keys are valid and have quota.
+- If you see import errors, clear Metro cache:
+	```
+	expo start -c
+	```
+- If you see TypeScript errors about `expo/tsconfig.base`, ensure Expo is installed and try `yarn install` again.
+
+## 5. Project Structure
+- `src/components/` — UI components
+- `src/services/` — API, AI, and data logic
+- `src/store/` — Zustand stores
+- `src/screens/` — App screens
+- `src/navigation/` — Navigation setup
+
+## 6. Troubleshooting
+- Metro bundler errors: prefer static imports, avoid dynamic imports for services.
+- API errors: check your `.env` and Supabase/AI keys.
+- For further help, see the Expo and Supabase docs.
+
+---
+
+For any issues, check the README and ensure all environment variables are set correctly.
 

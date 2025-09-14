@@ -1,5 +1,7 @@
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, TouchableOpacity, View, Text, TextInput, ScrollView, Pressable } from 'react-native';
+import { workoutService } from '../../services/workoutService';
 
 type PlanType = { id: string; weekday: number; exercise: string; sets: number; reps: number; notes?: string; exerciseName?: string };
 interface WeeklyPlanModalProps {
@@ -11,8 +13,7 @@ interface WeeklyPlanModalProps {
 // ...
 function WeeklyPlanModal({ visible, onClose, plans, onPlansChange }: WeeklyPlanModalProps) {
   const [loading, setLoading] = useState(false);
-  // Import dinamico per evitare loop
-  const getService = async () => (await import('../../services/workoutService')).workoutService;
+  // Static import for workoutService (fix Metro error)
   const days = ['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
   const uniquePlans = Object.values(
     plans.reduce((acc, p) => {
@@ -34,7 +35,6 @@ function WeeklyPlanModal({ visible, onClose, plans, onPlansChange }: WeeklyPlanM
   const handleSave = async () => {
     if (!edit) return;
     setLoading(true);
-    const workoutService = await getService();
     try {
       if (edit.id) {
         // Modifica
@@ -63,7 +63,6 @@ function WeeklyPlanModal({ visible, onClose, plans, onPlansChange }: WeeklyPlanM
   };
   const handleDelete = async (id:string) => {
     setLoading(true);
-    const workoutService = await getService();
     try {
       await workoutService.deletePlan(id);
       const updated = await workoutService.getAllPlans();
@@ -168,19 +167,17 @@ export default function DashboardScreen() {
   // Carica la scheda settimanale completa
   const [allPlans, setAllPlans] = useState<PlanType[]>([]);
   useEffect(() => {
-    import('../../services/workoutService').then(mod => {
-      mod.workoutService.getAllPlans().then(setAllPlans).catch(()=>{});
-    });
+    workoutService.getAllPlans().then(setAllPlans).catch(()=>{});
   }, []);
   // ...existing code...
-  const { date, load, entries, loading } = useDiaryStore();
+  const { date, load, entries, loading, compositeMeals, loadCompositeMeals } = useDiaryStore();
   const { goals, load: loadGoals, save: saveGoals, reset: resetGoals } = useGoalsStore();
   const [showMacroModal, setShowMacroModal] = useState(false);
   const [macroDraft, setMacroDraft] = useState({ calories:'', protein:'', carbohydrates:'', fat:'' });
   const { workouts, load: loadWorkouts, plannedToday, loadPlannedToday, plannedTodayList, loadPlannedTodayList } = useWorkoutStore();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  useEffect(() => { load(); }, [date]);
+  useEffect(() => { load(); if (loadCompositeMeals) loadCompositeMeals(); }, [date]);
   useEffect(() => { if (!goals) { loadGoals(); } loadWorkouts(); loadPlannedToday(); loadPlannedTodayList(); }, [goals]);
   useEffect(()=>{ if (goals) setMacroDraft({
     calories: String(goals.calories ?? ''),
@@ -200,15 +197,30 @@ export default function DashboardScreen() {
   };
   const handleResetMacros = async () => { await resetGoals(); };
   const aggregates = useMemo(() => {
+    // Somma delle voci del diario del giorno
     const base = { calories:0, protein:0, carbs:0, fat:0 };
+    const presentNames = new Set<string>();
     entries.forEach((e:any) => {
       base.calories += e.calories_calculated || 0;
       base.protein += e.protein_g_calculated || 0;
       base.carbs += e.carbohydrates_total_g_calculated || 0;
       base.fat += e.fat_total_g_calculated || 0;
+      if (e.food_name_snapshot) presentNames.add(String(e.food_name_snapshot).toLowerCase());
+    });
+    // Integra anche gli item dei pasti AI/compositi se non già presenti come voce singola
+    (compositeMeals||[]).forEach((m:any) => {
+      (m.items||[]).forEach((it:any) => {
+        const name = (it.item_name||'').toLowerCase();
+        if (!presentNames.has(name)) { // evita doppio conteggio se già aggiunto manualmente/automaticamente
+          base.calories += it.calories || 0;
+          base.protein += it.protein_g || 0;
+          base.carbs += it.carbohydrates_g || 0;
+          base.fat += it.fat_g || 0;
+        }
+      });
     });
     return base;
-  }, [entries]);
+  }, [entries, compositeMeals]);
   const pct = (value:number, goal?:number) => goal ? Math.min(100, (value/goal)*100) : 0;
   const todayWorkout = plannedToday || workouts.find((w:any)=> w.date === date);
   const plannedCount = plannedTodayList?.length || (todayWorkout ? 1 : 0);
@@ -360,7 +372,7 @@ const styles = StyleSheet.create({
   progressBarInner:{ height:'100%', borderRadius:8 },
   macroColumns:{ flexDirection:'row', justifyContent:'space-between' },
   macroCol:{ alignItems:'center', flex:1 },
-  macroValue:{ color:colors.accent, fontSize:14, fontWeight:'600' },
+  macroValue:{ color:'#fff', fontSize:14, fontWeight:'600' },
   macroLabel:{ color:colors.accent, fontSize:11, marginTop:2, opacity:0.9 },
   workoutTodayCard:{ flexDirection:'row', alignItems:'center', gap:14, padding:18 },
   workoutIcon:{ width:44, height:44, borderRadius:14, backgroundColor:colors.cardAlt, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:colors.border },
