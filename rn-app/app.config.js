@@ -34,7 +34,8 @@ export default ({ config }) => ({
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
     CLARIFAI_API_KEY: process.env.CLARIFAI_API_KEY,
     OPENFOOD_API_KEY: process.env.OPENFOOD_API_KEY,
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     eas: {
       projectId: "cbfd46b4-1b49-4baa-8733-6a6f01b2e96d"
     }

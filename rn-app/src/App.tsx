@@ -1,7 +1,8 @@
 import 'react-native-url-polyfill/auto';
-import React, { useEffect } from 'react';
+import 'react-native-reanimated';
+import React, { useEffect, useCallback } from 'react';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 // expo-navigation-bar provides control over the Android navigation bar appearance.
 // Ensure to add it to dependencies: expo install expo-navigation-bar
 // Using dynamic import fallback to avoid runtime crash if not installed yet.
@@ -18,18 +19,31 @@ export default function App() {
   const loading = useAuthStore(s => s.loading);
 
   useEffect(() => { init(); }, [init]);
-  // Hide Android system navigation bar for immersive UI
-  useEffect(() => {
+
+  const hideSystemNav = useCallback(async () => {
     if (Platform.OS === 'android' && NavigationBar) {
-      (async () => {
-        try {
-          await NavigationBar.setVisibilityAsync('hidden');
-          await NavigationBar.setBehaviorAsync('overlay-swipe');
-          await NavigationBar.setBackgroundColorAsync('#000000');
-        } catch {}
-      })();
+      try {
+        // "immersive" mantiene nascosta la barra finché l'utente non fa swipe edge
+        await NavigationBar.setBehaviorAsync('immersive');
+        await NavigationBar.setBackgroundColorAsync('#000000');
+        await NavigationBar.setVisibilityAsync('hidden');
+      } catch {}
     }
   }, []);
+
+  // Prima esecuzione all'avvio
+  useEffect(() => { hideSystemNav(); }, [hideSystemNav]);
+
+  // Ogni volta che lo stato dell'app torna active (rientro da altra activity / lock screen)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        // piccolo delay per evitare che il sistema lo rimostri subito dopo resume
+        setTimeout(() => hideSystemNav(), 120);
+      }
+    });
+    return () => sub.remove();
+  }, [hideSystemNav]);
 
   const navTheme = {
     ...DarkTheme,
