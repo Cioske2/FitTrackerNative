@@ -3,9 +3,13 @@ import Constants from 'expo-constants';
 const extra = Constants.expoConfig?.extra || {};
 const USDA_API_KEY = extra.USDA_API_KEY;
 const USDA_API_URL = 'https://api.nal.usda.gov/fdc/v1';
+// Feature flag: enable/disable OpenFoodFacts usage (default: enabled)
+const OPENFOODFACTS_ENABLED = extra.OPENFOODFACTS_ENABLED !== 'false' && extra.OPENFOODFACTS_ENABLED !== false && extra.OPENFOODFACTS_ENABLED !== 0;
+// Base URL for OpenFoodFacts (can be overridden to point to a proxy)
 const OPENFOODFACTS_API_URL = extra.OPENFOODFACTS_API_URL || 'https://world.openfoodfacts.org/api/v2';
 
 async function searchOpenFoodFacts(searchTerm: string) {
+  if (!OPENFOODFACTS_ENABLED) return [];
   const resp = await fetch(`${OPENFOODFACTS_API_URL}/search?search_terms=${encodeURIComponent(searchTerm)}&search_tag=food&json=1&page_size=10&fields=product_name,nutriments,code,brands,quantity,serving_size,categories_tags,product_name_en,product_name_it`);
   const json = await resp.json();
   if (!json?.products) return [];

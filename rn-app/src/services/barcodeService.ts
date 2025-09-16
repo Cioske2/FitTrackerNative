@@ -29,6 +29,8 @@ export interface BarcodeLookupResult {
   product: OpenFoodFactsProduct;
   created: boolean; // true se inserito in Supabase ora
   foodRecord: any; // record nella tabella foods
+  // visual source — only FoodRepo or OpenFoodFacts (Supabase is ignored for UI)
+  source: 'FoodRepo' | 'OpenFoodFacts';
 }
 
 function mapToFoodInsert(p: OpenFoodFactsProduct) {
@@ -165,6 +167,8 @@ export async function lookupAndEnsureFood(
   // 1. Cerca già in Supabase
   const existing = await foodService.getFoodByBarcode(barcode);
   if (existing) {
+    // When product exists in Supabase we still want to show a visual source
+    // but we don't want to show 'Supabase'. Default to 'FoodRepo' for UI.
     return {
       product: {
         product_name: existing.name,
@@ -186,15 +190,22 @@ export async function lookupAndEnsureFood(
       },
       created: false,
       foodRecord: existing,
+      source: 'FoodRepo',
     };
   }
-  // 2. Solo Open Food Repo, nessun fallback
-  const product = await fetchProductFromOpenFoodRepo(barcode);
+  // 2. Prova prima Open Food Repo (primaria)
+  let product = await fetchProductFromOpenFoodRepo(barcode);
+  let source: 'FoodRepo' | 'OpenFoodFacts' = 'FoodRepo';
+  // 2b. Se non trovato in FoodRepo, fallback a OpenFoodFacts
+  if (!product) {
+    product = await fetchProductFromOpenFoodFacts(barcode);
+    source = 'OpenFoodFacts';
+  }
   if (!product) return null;
   // 3. Inserisci in Supabase
   const insertPayload = mapToFoodInsert(product);
   const created = await foodService.addFood(insertPayload);
-  return { product, created: true, foodRecord: created };
+  return { product, created: true, foodRecord: created, source };
 }
 
 export const barcodeService = {
