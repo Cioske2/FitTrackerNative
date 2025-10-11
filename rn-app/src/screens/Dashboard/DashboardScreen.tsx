@@ -77,25 +77,30 @@ function WeeklyPlanModal({ visible, onClose, plans, onPlansChange }: WeeklyPlanM
   <View style={{backgroundColor:'#23272e', borderRadius:18, padding:20, width:'92%', maxHeight:'82%'}}>
     <Text style={{fontWeight:'700', fontSize:18, marginBottom:12, color:'#fff'}}>Scheda settimanale</Text>
     <ScrollView style={{maxHeight:400}}>
-      {Object.keys(grouped).sort((a,b)=>Number(a)-Number(b)).map(dayIdx => (
+      {[0,1,2,3,4,5,6].map(dayIdx => (
         <View key={dayIdx} style={{marginBottom:18}}>
           <View style={{flexDirection:'row', alignItems:'center', marginBottom:6, justifyContent:'space-between'}}>
-            <Text style={{fontWeight:'600', color:'#bfc6d1', fontSize:15}}>{days[Number(dayIdx)]}</Text>
-            <TouchableOpacity onPress={()=>setAddingDay(Number(dayIdx))} style={{paddingHorizontal:10, paddingVertical:4, backgroundColor:'#31343a', borderRadius:8}}>
+            <Text style={{fontWeight:'600', color:'#bfc6d1', fontSize:15}}>{days[dayIdx]}</Text>
+            <TouchableOpacity onPress={()=>{setAddingDay(dayIdx); setEdit({id:undefined, weekday:dayIdx, exercise:'', sets:'', reps:'', notes:''});}} style={{paddingHorizontal:10, paddingVertical:4, backgroundColor:'#31343a', borderRadius:8}}>
               <Text style={{fontSize:15, fontWeight:'700', color:'#7ee787'}}>＋</Text>
             </TouchableOpacity>
           </View>
           {/* Form aggiunta inline */}
-          {addingDay===Number(dayIdx) && (
+          {addingDay===dayIdx && (
             <View style={{backgroundColor:'#1a1d22', borderRadius:10, padding:10, marginBottom:10}}>
-              <TextInput placeholder="Esercizio" placeholderTextColor="#888" value={edit?.exercise||''} onChangeText={t=>setEdit(e=>({
-                id: undefined,
-                weekday: Number(dayIdx),
-                exercise: t,
-                sets: '',
-                reps: '',
-                notes: ''
-              }))} style={{borderBottomWidth:1, borderColor:'#444', marginBottom:6, color:'#fff', backgroundColor:'#23272e', borderRadius:6, paddingHorizontal:8}} />
+              <View style={{marginBottom:8}}>
+                <Text style={{color:'#bfc6d1', fontSize:13, marginBottom:4}}>Giorno</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:8}}>
+                  <View style={{flexDirection:'row', gap:6}}>
+                    {days.map((day, idx) => (
+                      <TouchableOpacity key={idx} onPress={()=>setEdit(e=>e ? {...e, weekday:idx} : {id:undefined, weekday:idx, exercise:'', sets:'', reps:'', notes:''})} style={{paddingHorizontal:12, paddingVertical:6, borderRadius:8, backgroundColor: edit?.weekday===idx ? '#7ee787' : '#31343a', borderWidth:1, borderColor: edit?.weekday===idx ? '#7ee787' : '#444'}}>
+                        <Text style={{color: edit?.weekday===idx ? '#000' : '#bfc6d1', fontWeight:'600', fontSize:13}}>{day.slice(0,3)}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+              <TextInput placeholder="Esercizio" placeholderTextColor="#888" value={edit?.exercise||''} onChangeText={t=>setEdit(e=>e ? {...e, exercise:t} : null)} style={{borderBottomWidth:1, borderColor:'#444', marginBottom:6, color:'#fff', backgroundColor:'#23272e', borderRadius:6, paddingHorizontal:8}} />
               <View style={{flexDirection:'row', gap:8}}>
                 <TextInput placeholder="Serie" placeholderTextColor="#888" value={edit?.sets||''} onChangeText={t=>setEdit(e=>e ? {...e, sets:t} : null)} keyboardType="numeric" style={{flex:1, borderBottomWidth:1, borderColor:'#444', marginBottom:6, color:'#fff', backgroundColor:'#23272e', borderRadius:6, paddingHorizontal:8}} />
                 <TextInput placeholder="Ripetizioni" placeholderTextColor="#888" value={edit?.reps||''} onChangeText={t=>setEdit(e=>e ? {...e, reps:t} : null)} keyboardType="numeric" style={{flex:1, borderBottomWidth:1, borderColor:'#444', marginBottom:6, color:'#fff', backgroundColor:'#23272e', borderRadius:6, paddingHorizontal:8}} />
@@ -108,25 +113,37 @@ function WeeklyPlanModal({ visible, onClose, plans, onPlansChange }: WeeklyPlanM
             </View>
           )}
           {/* Lista esercizi */}
-          {grouped[Number(dayIdx)].map((ex) => (
+          {grouped[dayIdx] && grouped[dayIdx].map((ex) => (
             <View key={ex.id} style={{padding:10, borderRadius:10, backgroundColor:'#1a1d22', marginBottom:7, flexDirection:'row', alignItems:'center', justifyContent:'space-between'}}>
               <View style={{flex:1}}>
                 <Text style={{fontWeight:'600', color:'#fff', fontSize:15}}>{ex.exerciseName || ex.exercise}</Text>
                 <Text style={{color:'#bfc6d1', fontSize:13}}>{ex.sets}x{ex.reps} {ex.notes ? ' - ' + ex.notes : ''}</Text>
               </View>
-              <View style={{flexDirection:'row', gap:4}}>
-                <TouchableOpacity onPress={()=>setEdit({id:ex.id, weekday:ex.weekday, exercise:ex.exerciseName||ex.exercise, sets:String(ex.sets), reps:String(ex.reps), notes:ex.notes||''})} style={{padding:5, borderRadius:5, backgroundColor:'#2386f3', alignItems:'center', justifyContent:'center'}}>
-                  <Text style={{color:'#fff', fontSize:17}}>✏️</Text>
+              <View style={{flexDirection:'row', gap:6}}>
+                <TouchableOpacity onPress={()=>setEdit({id:ex.id, weekday:ex.weekday, exercise:ex.exerciseName||ex.exercise, sets:String(ex.sets), reps:String(ex.reps), notes:ex.notes||''})} style={{paddingHorizontal:10, paddingVertical:6, borderRadius:8, backgroundColor:'rgba(126, 231, 135, 0.15)', borderWidth:1, borderColor:'rgba(126, 231, 135, 0.3)', alignItems:'center', justifyContent:'center'}}>
+                  <Text style={{color:'#7ee787', fontSize:14, fontWeight:'600'}}>✎</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={()=>handleDelete(ex.id)} style={{padding:5, borderRadius:5, backgroundColor:'#d32f2f', marginLeft:4, alignItems:'center', justifyContent:'center'}}>
-                  <Text style={{color:'#fff', fontSize:17}}>🗑️</Text>
+                <TouchableOpacity onPress={()=>handleDelete(ex.id)} style={{paddingHorizontal:10, paddingVertical:6, borderRadius:8, backgroundColor:'rgba(239, 68, 68, 0.15)', borderWidth:1, borderColor:'rgba(239, 68, 68, 0.3)', alignItems:'center', justifyContent:'center'}}>
+                  <Text style={{color:'#ef4444', fontSize:14, fontWeight:'600'}}>✕</Text>
                 </TouchableOpacity>
               </View>
             </View>
           ))}
           {/* Form modifica inline */}
-          {edit && edit.id && edit.weekday===Number(dayIdx) && (
+          {edit && edit.id && edit.weekday===dayIdx && (
             <View style={{backgroundColor:'#1a1d22', borderRadius:10, padding:10, marginBottom:10}}>
+              <View style={{marginBottom:8}}>
+                <Text style={{color:'#bfc6d1', fontSize:13, marginBottom:4}}>Giorno</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{marginBottom:8}}>
+                  <View style={{flexDirection:'row', gap:6}}>
+                    {days.map((day, idx) => (
+                      <TouchableOpacity key={idx} onPress={()=>setEdit(e=>e ? {...e, weekday:idx} : null)} style={{paddingHorizontal:12, paddingVertical:6, borderRadius:8, backgroundColor: edit?.weekday===idx ? '#7ee787' : '#31343a', borderWidth:1, borderColor: edit?.weekday===idx ? '#7ee787' : '#444'}}>
+                        <Text style={{color: edit?.weekday===idx ? '#000' : '#bfc6d1', fontWeight:'600', fontSize:13}}>{day.slice(0,3)}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
               <TextInput placeholder="Esercizio" placeholderTextColor="#888" value={edit.exercise} onChangeText={t=>setEdit(e=>e ? {...e, exercise:t} : null)} style={{borderBottomWidth:1, borderColor:'#444', marginBottom:6, color:'#fff', backgroundColor:'#23272e', borderRadius:6, paddingHorizontal:8}} />
               <View style={{flexDirection:'row', gap:8}}>
                 <TextInput placeholder="Serie" placeholderTextColor="#888" value={edit.sets} onChangeText={t=>setEdit(e=>e ? {...e, sets:t} : null)} keyboardType="numeric" style={{flex:1, borderBottomWidth:1, borderColor:'#444', marginBottom:6, color:'#fff', backgroundColor:'#23272e', borderRadius:6, paddingHorizontal:8}} />
@@ -138,6 +155,9 @@ function WeeklyPlanModal({ visible, onClose, plans, onPlansChange }: WeeklyPlanM
                 <TouchableOpacity onPress={handleSave} style={{padding:7, borderRadius:7, backgroundColor:'#238636'}}><Text style={{color:'#fff'}}>Salva</Text></TouchableOpacity>
               </View>
             </View>
+          )}
+          {(!grouped[dayIdx] || grouped[dayIdx].length === 0) && addingDay !== dayIdx && (
+            <Text style={{color:'#666', fontSize:13, fontStyle:'italic', marginBottom:4}}>Nessun esercizio</Text>
           )}
         </View>
       ))}
@@ -164,6 +184,7 @@ export default function DashboardScreen() {
   // Callback per aggiornare la lista dopo CRUD dal modale
   const handlePlansChange = (plans: PlanType[]) => setAllPlans(plans);
   const [showPlanModal, setShowPlanModal] = useState(false);
+  const [showTodayWorkoutModal, setShowTodayWorkoutModal] = useState(false);
   // Carica la scheda settimanale completa
   const [allPlans, setAllPlans] = useState<PlanType[]>([]);
   useEffect(() => {
@@ -300,7 +321,7 @@ export default function DashboardScreen() {
                   <Text style={styles.subWorkouts}>{plannedCount} esercizi programmati</Text>
                 )}
               </View>
-              <RNPressable style={styles.playBtn}><Text style={styles.playText}>▶</Text></RNPressable>
+              <RNPressable style={styles.playBtn} onPress={()=>setShowTodayWorkoutModal(true)}><Text style={styles.playText}>▶</Text></RNPressable>
             </Card>
           </View>
         )}
@@ -344,6 +365,41 @@ export default function DashboardScreen() {
                 <RNPressable onPress={handleResetMacros} style={[styles.modalBtn, styles.modalNeutral]}><Text style={styles.modalBtnTxt}>Default</Text></RNPressable>
                 <RNPressable onPress={handleSaveMacros} style={[styles.modalBtn, styles.modalPrimary]}><Text style={styles.modalBtnPrimaryTxt}>Salva</Text></RNPressable>
               </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+      {/* Modal allenamento di oggi */}
+      {showTodayWorkoutModal && (
+        <Modal visible animationType="slide" transparent onRequestClose={()=>setShowTodayWorkoutModal(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, {maxHeight:'80%'}]}>
+              <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
+                <Text style={styles.modalTitle}>Allenamento di Oggi</Text>
+                <RNPressable onPress={()=>setShowTodayWorkoutModal(false)} hitSlop={10}>
+                  <Text style={{color:colors.textSecondary, fontSize:20, fontWeight:'600'}}>✕</Text>
+                </RNPressable>
+              </View>
+              <ScrollView style={{maxHeight:400}}>
+                {plannedTodayList && plannedTodayList.length > 0 ? (
+                  plannedTodayList.map((ex:any, idx:number) => (
+                    <View key={idx} style={{backgroundColor:colors.cardAlt, padding:14, borderRadius:12, marginBottom:10, borderWidth:1, borderColor:colors.border}}>
+                      <Text style={{color:colors.textPrimary, fontSize:15, fontWeight:'600', marginBottom:4}}>{ex.exerciseName || ex.exercise || 'Esercizio'}</Text>
+                      <Text style={{color:colors.textSecondary, fontSize:13}}>{ex.sets}x{ex.reps}{ex.notes ? ` - ${ex.notes}` : ''}</Text>
+                    </View>
+                  ))
+                ) : todayWorkout ? (
+                  <View style={{backgroundColor:colors.cardAlt, padding:14, borderRadius:12, marginBottom:10, borderWidth:1, borderColor:colors.border}}>
+                    <Text style={{color:colors.textPrimary, fontSize:15, fontWeight:'600', marginBottom:4}}>{todayWorkout.exerciseName || todayWorkout.title || 'Esercizio'}</Text>
+                    <Text style={{color:colors.textSecondary, fontSize:13}}>{todayWorkout.sets}x{todayWorkout.reps}{todayWorkout.weight ? ` @ ${todayWorkout.weight}kg` : ''}</Text>
+                  </View>
+                ) : (
+                  <Text style={{color:colors.textMuted, textAlign:'center'}}>Nessun allenamento programmato</Text>
+                )}
+              </ScrollView>
+              <RNPressable onPress={()=>setShowTodayWorkoutModal(false)} style={[styles.modalBtn, styles.modalPrimary, {marginTop:16, width:'100%', alignItems:'center'}]}>
+                <Text style={styles.modalBtnPrimaryTxt}>Chiudi</Text>
+              </RNPressable>
             </View>
           </View>
         </Modal>

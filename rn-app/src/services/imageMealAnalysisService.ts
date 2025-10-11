@@ -14,7 +14,8 @@ interface DishResult {
 
 // Read env values from app config extra or process env fallback
 const GEMINI_API_KEY = (Constants.expoConfig?.extra as any)?.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-const GEMINI_ENDPOINT = (Constants.expoConfig?.extra as any)?.GEMINI_ENDPOINT || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+// Usa v1 con gemini-2.5-flash, che supporta input immagini per l'analisi
+const GEMINI_ENDPOINT = (Constants.expoConfig?.extra as any)?.GEMINI_ENDPOINT || 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent';
 const SPOON_KEY = (Constants.expoConfig?.extra as any)?.SPOONACULAR_API_KEY || process.env.SPOONACULAR_API_KEY;
 
 export async function analyzeMealImage(localUri: string): Promise<DishResult[]> {

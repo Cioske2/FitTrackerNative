@@ -184,7 +184,7 @@ OPENROUTER_API_KEY=your-openrouter-api-key
 OPENFOODREPO_API_KEY=your-foodrepo-api-key
 ```
 
-> ⚠️ **Nota Sicurezza**: Le API keys inserite nel file `.env` vengono incluse nell'APK finale tramite `app.config.js` (extra config). La chiave Open Food Repo sarà visibile a chiunque decompili l'app. Usa questa configurazione solo se accetti questo rischio. Per ambienti di produzione, considera un backend proxy per proteggere le chiavi.
+> ⚠️ **Nota Sicurezza**: Le API keys inserite nel file `.env` vengono incluse nell'APK finale tramite `app.config.js` (extra config). Le chiavi saranno visibile a chiunque decompili l'app. Usa questa configurazione solo se accetti questo rischio. Per ambienti di produzione, considera un backend proxy per proteggere le chiavi.
 
 ### 4. Configurazione Database Supabase
 

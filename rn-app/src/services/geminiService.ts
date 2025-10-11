@@ -4,8 +4,8 @@ import Constants from 'expo-constants';
 const extra: any = Constants.expoConfig?.extra || {};
 // L'utente usa una singola chiave GEMINI_API_KEY (stessa per web e mobile)
 const API_KEY = extra.GEMINI_API_KEY || process.env.GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY || '';
-// Endpoint: se non specificato via extra/ env uso un path standard configurabile lato proxy backend
-const ENDPOINT_URL = extra.GEMINI_ENDPOINT_URL || process.env.GEMINI_ENDPOINT_URL || process.env.EXPO_PUBLIC_GEMINI_ENDPOINT_URL || 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+// Endpoint: usa v1 con il modello multimodale gemini-2.5-flash (supporta input testo+immagini)
+const ENDPOINT_URL = extra.GEMINI_ENDPOINT_URL || process.env.GEMINI_ENDPOINT_URL || process.env.EXPO_PUBLIC_GEMINI_ENDPOINT_URL || 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent';
 
 if (!API_KEY) console.warn('[geminiService] GEMINI_API_KEY non impostata. Le funzioni AI falliranno.');
 
