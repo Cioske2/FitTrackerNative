@@ -23,7 +23,42 @@ class WorkoutParserService {
 
   async parseWorkoutText(workoutText: string): Promise<ParsedWorkout[]> {
     if (!this.isConfigured) throw new Error('OpenRouter API non configurata');
-    const prompt = `Analizza il testo di un allenamento. Ignora righe che contengono solo nomi di gruppi muscolari o sono vuote. Estrai SOLO le righe che rappresentano esercizi concreti.\nTESTO:\n"${workoutText}"\nPer ogni esercizio estrai: exercise, sets, reps, weight, rest, notes. Rispondi SOLO con JSON: {"workouts": [{...}]}`;
+    const prompt = `Sei un esperto personal trainer. Analizza il seguente testo di allenamento ed estrai SOLO gli esercizi concreti.
+
+TESTO ALLENAMENTO:
+"${workoutText}"
+
+ISTRUZIONI:
+1. IGNORA completamente righe che contengono solo: nomi di gruppi muscolari (es. "Petto", "Gambe"), giorni della settimana, titoli generici
+2. Estrai SOLO righe che descrivono esercizi specifici con serie/ripetizioni
+3. Per ogni esercizio identifica:
+   - exercise: nome completo dell'esercizio (es. "Panca piana", "Squat", "Lat machine")
+   - sets: numero di serie (numero intero)
+   - reps: numero di ripetizioni (numero intero)
+   - weight: peso in kg (numero, 0 se non specificato)
+   - rest: tempo di recupero (stringa, vuota se non specificato)
+   - notes: eventuali note aggiuntive (stringa)
+
+FORMATO OUTPUT:
+Rispondi SOLO con JSON valido in questo formato esatto:
+{
+  "workouts": [
+    {
+      "exercise": "Nome esercizio",
+      "sets": 3,
+      "reps": 10,
+      "weight": 50,
+      "rest": "90s",
+      "notes": ""
+    }
+  ]
+}
+
+IMPORTANTE:
+- Se il testo non contiene esercizi validi, ritorna {"workouts": []}
+- Tutti i valori numerici devono essere numeri, non stringhe
+- Se mancano informazioni (peso, recupero), usa valori predefiniti (0 per weight, "" per rest/notes)`;
+
     const response = await fetch(`${this.baseURL}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -62,7 +97,7 @@ class WorkoutParserService {
   parseWorkoutTextSimple(workoutText: string): ParsedWorkout[] {
     const workouts: ParsedWorkout[] = [];
     const lines = workoutText.split(/[\n,]/).map(line => line.trim()).filter(line => line);
-    const skipWords = ['spalle','gambe','petto','dorsali','schiena','bicipiti','tricipiti','addome','addominali','oggi ho fatto'];
+    const skipWords = ['spalle', 'gambe', 'petto', 'dorsali', 'schiena', 'bicipiti', 'tricipiti', 'addome', 'addominali', 'oggi ho fatto'];
     for (const line of lines) {
       if (skipWords.some(w => line.toLowerCase().startsWith(w))) continue;
       const match1 = line.match(/^([a-zA-Zàèéìòùç' ]+)\s+(\d+)x(\d+)(?:\/(\d+))?\s*(\d+)?\s*kg?\s*([\d\/.]+)?/i);
@@ -71,7 +106,7 @@ class WorkoutParserService {
         const sets = parseInt(match1[2]);
         const reps = match1[4] ? parseInt(match1[4]) : parseInt(match1[3]);
         const weight = match1[5] ? parseFloat(match1[5]) : 0;
-        const rest = match1[6] ? match1[6].replace(/recupero|rec/gi,'').replace(/\//g,'-').trim() + ' min' : '';
+        const rest = match1[6] ? match1[6].replace(/recupero|rec/gi, '').replace(/\//g, '-').trim() + ' min' : '';
         workouts.push({ exercise, sets, reps, weight, rest, notes: '' });
         continue;
       }
@@ -81,7 +116,7 @@ class WorkoutParserService {
         const weight = parseFloat(match2[2]);
         const sets = parseInt(match2[3]);
         const reps = match2[5] ? parseInt(match2[5]) : parseInt(match2[4]);
-        const rest = match2[6] ? match2[6].replace(/recupero|rec/gi,'').replace(/\//g,'-').trim() + ' min' : '';
+        const rest = match2[6] ? match2[6].replace(/recupero|rec/gi, '').replace(/\//g, '-').trim() + ' min' : '';
         workouts.push({ exercise, sets, reps, weight, rest, notes: '' });
         continue;
       }

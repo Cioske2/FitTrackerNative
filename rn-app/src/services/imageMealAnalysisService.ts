@@ -25,16 +25,16 @@ export async function analyzeMealImage(localUri: string): Promise<DishResult[]> 
   // Use legacy API to read as base64 (Expo SDK 54+)
   const base64 = await FileSystem.readAsStringAsync(localUri, { encoding: 'base64' });
 
-  const payload = { contents:[{ parts:[ { inline_data:{ mime_type: guessMime(localUri), data: base64 } }, { text: PROMPT } ] }] };
-  const res = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) });
+  const payload = { contents: [{ parts: [{ inline_data: { mime_type: guessMime(localUri), data: base64 } }, { text: PROMPT }] }] };
+  const res = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   if (!res.ok) throw new Error(`Gemini status ${res.status}`);
   const json = await res.json();
   const raw = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
   const arr = extractArray(raw);
-  const mapped: DishResult[] = arr.map((o:any)=> ({
+  const mapped: DishResult[] = arr.map((o: any) => ({
     id: `dish-${slug(o.Dish || o.Piatto)}-${Math.random().toString(36).slice(2)}`,
     name: o.Dish || o.Piatto || 'Dish',
-    quantityText: o['Estimated quantity'] || o['Quantità stimata'] || '1 serving',
+    quantityText: '',
     ingredients: o.Ingredients || o.Ingredienti || [],
     calories: numberOr(o.EstimatedCalories, 0),
     protein: numberOr(o.EstimatedProtein, 0),
@@ -44,11 +44,11 @@ export async function analyzeMealImage(localUri: string): Promise<DishResult[]> 
   return mapped;
 }
 
-function numberOr(v:any, d:number){ const n = Number(v); return isFinite(n)? n : d; }
-function slug(s:string){ return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$|/g,''); }
-function guessMime(uri:string){ if (uri.endsWith('.png')) return 'image/png'; if (uri.endsWith('.jpg')||uri.endsWith('.jpeg')) return 'image/jpeg'; return 'image/*'; }
+function numberOr(v: any, d: number) { const n = Number(v); return isFinite(n) ? n : d; }
+function slug(s: string) { return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$|/g, ''); }
+function guessMime(uri: string) { if (uri.endsWith('.png')) return 'image/png'; if (uri.endsWith('.jpg') || uri.endsWith('.jpeg')) return 'image/jpeg'; return 'image/*'; }
 
-function extractArray(text:string){
+function extractArray(text: string) {
   try {
     let t = text.trim();
     if (t.startsWith('```')) t = t.replace(/^```[a-zA-Z]*\n/, '').replace(/```$/, '').trim();
@@ -58,6 +58,30 @@ function extractArray(text:string){
   } catch { return []; }
 }
 
-const PROMPT = `You are an expert in computer vision and nutrition. Analyze this food image.
-Return ONLY a JSON array of dishes with keys: Dish, "Estimated quantity", Ingredients[], EstimatedCalories, EstimatedProtein, EstimatedCarbohydrates, EstimatedFat.
-If nothing recognizable return [].`;
+const PROMPT = `You are an expert nutritionist and computer vision specialist. Analyze this food image carefully.
+
+INSTRUCTIONS:
+1. Identify each distinct dish/food item in the image
+2. For each item, estimate realistic nutritional values based on visual portion size
+3. Use standard Italian food names when possible
+4. Be conservative with calorie estimates - avoid overestimating
+5. If multiple servings are visible, calculate for ONE typical serving
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON array with this exact structure:
+[
+  {
+    "Dish": "Nome del piatto in italiano",
+    "Ingredients": ["ingrediente1", "ingrediente2"],
+    "EstimatedCalories": <number in kcal>,
+    "EstimatedProtein": <number in grams>,
+    "EstimatedCarbohydrates": <number in grams>,
+    "EstimatedFat": <number in grams>
+  }
+]
+
+IMPORTANT:
+- If no food is recognizable, return []
+- All nutritional values must be numbers (not strings)
+- Use realistic portion sizes (e.g., one plate, one bowl)
+- Calories should be reasonable for the portion shown`;

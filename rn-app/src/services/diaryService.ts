@@ -101,7 +101,7 @@ export const diaryService = {
     return true;
   },
   // ---- Composite meals (AI analyzed) ----
-  addCompositeMeal: async (mealData: { name?:string; mealType?:string; date:string; totals:{calories:number; protein:number; carbs:number; fat:number}; items: { name:string; originalName?:string; quantity:number; unit:string; calories:number; protein:number; carbs:number; fat:number; foodId?:number|null; source?:string|null }[]; notes?:string|null }) => {
+  addCompositeMeal: async (mealData: { name?: string; mealType?: string; date: string; totals: { calories: number; protein: number; carbs: number; fat: number }; items: { name: string; originalName?: string; quantity: number; unit: string; calories: number; protein: number; carbs: number; fat: number; foodId?: number | null; source?: string | null }[]; notes?: string | null }) => {
     const header = {
       name: mealData.name || `Pasto ${mealData.date}`,
       meal_type: mealData.mealType || 'AI',
@@ -135,10 +135,10 @@ export const diaryService = {
   getCompositeMealsForDate: async (dateString: string) => {
     const { data: meals, error } = await supabase.from('composite_meals').select('*').eq('consumption_date', dateString).order('created_at', { ascending: true });
     if (error) throw new Error(error.message);
-    if (!meals || meals.length===0) return [];
-    const withItems = await Promise.all(meals.map(async (m:any) => {
+    if (!meals || meals.length === 0) return [];
+    const withItems = await Promise.all(meals.map(async (m: any) => {
       const { data: items, error: itemsErr } = await supabase.from('composite_meal_items').select('*').eq('composite_meal_id', m.id).order('created_at', { ascending: true });
-      return { ...m, items: itemsErr ? [] : (items||[]) };
+      return { ...m, items: itemsErr ? [] : (items || []) };
     }));
     return withItems;
   }
