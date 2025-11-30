@@ -15,8 +15,8 @@ const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const isAuthenticated = useAuthStore(s => !!s.session);
-  const user = useAuthStore(s => s.user);
-  const needsOnboarding = isAuthenticated && user?.user_metadata && !user.user_metadata.onboarded;
+  const profile = useAuthStore(s => s.profile);
+  const needsOnboarding = isAuthenticated && (!profile || !profile.goal);
 
   return (
     <Stack.Navigator>

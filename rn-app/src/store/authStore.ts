@@ -26,7 +26,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       try {
         profile = await profileService.getProfile(session.user.id);
       } catch (e) {
-        console.log('Profile not found, trigger might have failed or delay', e);
+        console.log('Profile not found or error, logging out:', e);
+        // Profile doesn't exist - logout to force re-registration
+        await supabase.auth.signOut();
+        set({ session: null, user: null, profile: null, loading: false });
+        return;
       }
     }
     set({ session, user: session?.user ?? null, profile, loading: false });
@@ -34,7 +38,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     supabase.auth.onAuthStateChange(async (_ev, session) => {
       let newProfile = get().profile;
       if (session?.user && !newProfile) {
-        try { newProfile = await profileService.getProfile(session.user.id); } catch { }
+        try {
+          newProfile = await profileService.getProfile(session.user.id);
+        } catch (e) {
+          console.log('Profile error during auth change, logging out:', e);
+          await supabase.auth.signOut();
+          set({ session: null, user: null, profile: null });
+          return;
+        }
       }
       set({ session, user: session?.user ?? null, profile: newProfile });
     });
@@ -61,7 +72,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   updateProfile: async (updates: Partial<Profile>) => {
     const user = get().user;
     if (!user) return;
-    const updated = await profileService.updateProfile(user.id, updates);
-    set({ profile: updated });
+
+    // First, ensure the profile exists
+    let profile = get().profile;
+    if (!profile) {
+      try {
+        profile = await profileService.getProfile(user.id);
+        set({ profile });
+      } catch (e) {
+        console.error('Error getting profile, logging out:', e);
+        // Profile doesn't exist and can't be created - logout
+        await supabase.auth.signOut();
+        set({ session: null, user: null, profile: null });
+        return;
+      }
+    }
+
+    // Now update it
+    try {
+      const updated = await profileService.updateProfile(user.id, updates);
+      set({ profile: updated });
+    } catch (e) {
+      console.error('Error updating profile, logging out:', e);
+      // Can't update profile - logout
+      await supabase.auth.signOut();
+      set({ session: null, user: null, profile: null });
+    }
   }
 }));

@@ -6,7 +6,7 @@ export default ({ config }) => ({
   slug: "fittracker-native",
   version: "0.1.0",
   orientation: "portrait",
-  icon: "./assets/nextRep.png",
+  icon: "./assets/nextrepplogo.png",
   scheme: "fittracker",
   userInterfaceStyle: "dark",
   ios: {
@@ -16,7 +16,7 @@ export default ({ config }) => ({
   android: {
     package: "com.example.fittrackernative",
     adaptiveIcon: {
-      foregroundImage: "./assets/nextRep.png",
+      foregroundImage: "./assets/nextrepplogo.png",
       backgroundColor: "#000000",
     },
     permissions: ["CAMERA"],

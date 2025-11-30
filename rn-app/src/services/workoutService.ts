@@ -33,6 +33,7 @@ export const workoutService = {
         reps: w.reps,
         weight: w.weight || 0,
         notes: w.notes || '',
+        user_id: (await supabase.auth.getUser()).data.user?.id
       }
     ]).select().single();
     if (error) throw new Error(error.message);
@@ -63,7 +64,7 @@ export const workoutService = {
     const weekday = today.getDay();
     const { data, error } = await supabase.from('workout_plans').select('*').eq('weekday', weekday).limit(1);
     if (error) throw new Error(error.message);
-    if (!data || data.length===0) return null;
+    if (!data || data.length === 0) return null;
     const w = data[0];
     return {
       id: w.id,
@@ -81,7 +82,7 @@ export const workoutService = {
     const weekday = today.getDay();
     const { data, error } = await supabase.from('workout_plans').select('*').eq('weekday', weekday);
     if (error) throw new Error(error.message);
-    return (data || []).map((w:any)=>({
+    return (data || []).map((w: any) => ({
       id: w.id,
       exerciseName: w.exercise,
       planned: true,
@@ -93,7 +94,9 @@ export const workoutService = {
   },
   // CRUD for workout_plans (scheda settimanale)
   addPlan: async (plan: { weekday: number; exercise: string; sets: number; reps: number; notes?: string }) => {
-    const { data, error } = await supabase.from('workout_plans').insert([plan]).select().single();
+    const user = (await supabase.auth.getUser()).data.user;
+    const planWithUser = { ...plan, user_id: user?.id };
+    const { data, error } = await supabase.from('workout_plans').insert([planWithUser]).select().single();
     if (error) throw new Error(error.message);
     return data;
   },

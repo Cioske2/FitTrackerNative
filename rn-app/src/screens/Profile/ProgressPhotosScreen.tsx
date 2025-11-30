@@ -1,28 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, FlatList, Alert, Modal, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, FlatList, Alert, Modal, Dimensions, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { progressService, ProgressEntry } from '../../services/progressService';
 
 const { width } = Dimensions.get('window');
 const COLUMNS = 3;
 const ITEM_SIZE = (width - 48) / COLUMNS;
 
-interface PhotoItem {
-    id: string;
-    uri: string;
-    date: string;
-}
-
-const PHOTOS_KEY = 'progress_photos_v1';
-
 export default function ProgressPhotosScreen({ navigation }: any) {
     const insets = useSafeAreaInsets();
-    const [photos, setPhotos] = useState<PhotoItem[]>([]);
-    const [selectedPhoto, setSelectedPhoto] = useState<PhotoItem | null>(null);
+    const [photos, setPhotos] = useState<ProgressEntry[]>([]);
+    const [selectedPhoto, setSelectedPhoto] = useState<ProgressEntry | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [uploading, setUploading] = useState(false);
 
     useEffect(() => {
         loadPhotos();
@@ -30,21 +23,14 @@ export default function ProgressPhotosScreen({ navigation }: any) {
 
     const loadPhotos = async () => {
         try {
-            const stored = await AsyncStorage.getItem(PHOTOS_KEY);
-            if (stored) {
-                setPhotos(JSON.parse(stored));
-            }
+            setLoading(true);
+            const entries = await progressService.getProgressEntries();
+            setPhotos(entries);
         } catch (e) {
-            console.error(e);
-        }
-    };
-
-    const savePhotos = async (newPhotos: PhotoItem[]) => {
-        try {
-            await AsyncStorage.setItem(PHOTOS_KEY, JSON.stringify(newPhotos));
-            setPhotos(newPhotos);
-        } catch (e) {
-            console.error(e);
+            console.error('Error loading photos:', e);
+            Alert.alert('Errore', 'Impossibile caricare le foto');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -69,24 +55,25 @@ export default function ProgressPhotosScreen({ navigation }: any) {
 
         if (!result.canceled && result.assets[0]) {
             const asset = result.assets[0];
-            // Copy to app document directory to ensure persistence
-            const fileName = `progress-${Date.now()}.jpg`;
-            const newPath = ((FileSystem as any).documentDirectory || (FileSystem as any).cacheDirectory) + fileName;
 
             try {
-                await FileSystem.copyAsync({ from: asset.uri, to: newPath });
+                setUploading(true);
 
-                const newPhoto: PhotoItem = {
-                    id: Date.now().toString(),
-                    uri: newPath,
-                    date: new Date().toISOString()
-                };
+                // Upload photo to Supabase Storage
+                const photoPath = await progressService.uploadProgressPhoto(asset.uri);
 
-                const updated = [newPhoto, ...photos];
-                await savePhotos(updated);
-            } catch (e) {
-                Alert.alert('Errore', 'Impossibile salvare la foto');
+                // Save progress entry to database
+                const newEntry = await progressService.addProgressEntry(photoPath);
+
+                // Reload photos
+                await loadPhotos();
+
+                Alert.alert('Successo', 'Foto caricata!');
+            } catch (e: any) {
+                Alert.alert('Errore', e.message || 'Impossibile salvare la foto');
                 console.error(e);
+            } finally {
+                setUploading(false);
             }
         }
     };
@@ -96,23 +83,31 @@ export default function ProgressPhotosScreen({ navigation }: any) {
             { text: 'Annulla', style: 'cancel' },
             {
                 text: 'Elimina', style: 'destructive', onPress: async () => {
-                    const updated = photos.filter(p => p.id !== id);
-                    await savePhotos(updated);
-                    setSelectedPhoto(null);
-                    // Optionally delete file from FS
+                    try {
+                        await progressService.deleteProgressEntry(id);
+                        await loadPhotos();
+                        setSelectedPhoto(null);
+                        Alert.alert('Successo', 'Foto eliminata');
+                    } catch (e: any) {
+                        Alert.alert('Errore', e.message || 'Impossibile eliminare');
+                    }
                 }
             }
         ]);
     };
 
-    const renderItem = ({ item }: { item: PhotoItem }) => (
-        <TouchableOpacity onPress={() => setSelectedPhoto(item)} style={styles.itemContainer}>
-            <Image source={{ uri: item.uri }} style={styles.thumb} />
-            <View style={styles.dateBadge}>
-                <Text style={styles.dateText}>{new Date(item.date).toLocaleDateString()}</Text>
-            </View>
-        </TouchableOpacity>
-    );
+    const renderItem = ({ item }: { item: ProgressEntry }) => {
+        const imageUrl = progressService.getPublicUrl(item.photo_path);
+
+        return (
+            <TouchableOpacity onPress={() => setSelectedPhoto(item)} style={styles.itemContainer}>
+                <Image source={{ uri: imageUrl }} style={styles.thumb} />
+                <View style={styles.dateBadge}>
+                    <Text style={styles.dateText}>{new Date(item.date).toLocaleDateString()}</Text>
+                </View>
+            </TouchableOpacity>
+        );
+    };
 
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -133,13 +128,27 @@ export default function ProgressPhotosScreen({ navigation }: any) {
                 numColumns={COLUMNS}
                 contentContainerStyle={styles.grid}
                 ListEmptyComponent={
-                    <View style={styles.empty}>
-                        <Ionicons name="images-outline" size={64} color={colors.cardAlt} />
-                        <Text style={styles.emptyText}>Nessuna foto ancora</Text>
-                        <Text style={styles.emptySub}>Scatta una foto per monitorare i tuoi cambiamenti</Text>
-                    </View>
+                    loading ? (
+                        <View style={styles.empty}>
+                            <ActivityIndicator size="large" color={colors.accent} />
+                            <Text style={styles.emptyText}>Caricamento...</Text>
+                        </View>
+                    ) : (
+                        <View style={styles.empty}>
+                            <Ionicons name="images-outline" size={64} color={colors.cardAlt} />
+                            <Text style={styles.emptyText}>Nessuna foto ancora</Text>
+                            <Text style={styles.emptySub}>Scatta una foto per monitorare i tuoi cambiamenti</Text>
+                        </View>
+                    )
                 }
             />
+
+            {uploading && (
+                <View style={styles.uploadOverlay}>
+                    <ActivityIndicator size="large" color={colors.accent} />
+                    <Text style={styles.uploadText}>Caricamento foto...</Text>
+                </View>
+            )}
 
             <Modal visible={!!selectedPhoto} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
@@ -149,9 +158,15 @@ export default function ProgressPhotosScreen({ navigation }: any) {
 
                     {selectedPhoto && (
                         <>
-                            <Image source={{ uri: selectedPhoto.uri }} style={styles.fullImage} resizeMode="contain" />
+                            <Image
+                                source={{ uri: progressService.getPublicUrl(selectedPhoto.photo_path) }}
+                                style={styles.fullImage}
+                                resizeMode="contain"
+                            />
                             <View style={styles.modalFooter}>
-                                <Text style={styles.modalDate}>{new Date(selectedPhoto.date).toLocaleDateString()} {new Date(selectedPhoto.date).toLocaleTimeString().slice(0, 5)}</Text>
+                                <Text style={styles.modalDate}>
+                                    {new Date(selectedPhoto.date).toLocaleDateString()} {new Date(selectedPhoto.created_at).toLocaleTimeString().slice(0, 5)}
+                                </Text>
                                 <TouchableOpacity onPress={() => handleDelete(selectedPhoto.id)} style={styles.deleteBtn}>
                                     <Ionicons name="trash" size={24} color={colors.danger} />
                                 </TouchableOpacity>
@@ -183,5 +198,7 @@ const styles = StyleSheet.create({
     fullImage: { width: '100%', height: '80%' },
     modalFooter: { position: 'absolute', bottom: 50, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 30 },
     modalDate: { color: '#fff', fontSize: 16, fontWeight: '600' },
-    deleteBtn: { padding: 10, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 20 }
+    deleteBtn: { padding: 10, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 20 },
+    uploadOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
+    uploadText: { color: '#fff', fontSize: 16, marginTop: 16, fontWeight: '600' }
 });

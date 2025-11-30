@@ -2,7 +2,6 @@ import { supabase } from './supabaseClient';
 
 export interface GoalItem {
   id: string;
-  // user_id removed (single-user instance)
   type: 'weight' | 'fitness' | 'diet' | 'other';
   title: string;
   description?: string;
@@ -36,6 +35,10 @@ export const goalItemsService = {
       status: 'active',
       due_date: payload.due_date || null,
     };
+    const user = (await supabase.auth.getUser()).data.user;
+    if (user) {
+      insertObj.user_id = user.id;
+    }
     const { data, error } = await supabase.from('goal_items').insert([insertObj]).select().single();
     if (error) throw error;
     return data as GoalItem;

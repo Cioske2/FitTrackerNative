@@ -42,11 +42,12 @@ export const goalsService = {
       if (!data) {
         const insertObj = {
           id: 'singleton',
-            calories: DEFAULT_GOALS.calories,
-            protein_g: DEFAULT_GOALS.protein,
-            carbohydrates_g: DEFAULT_GOALS.carbohydrates,
-            fat_g: DEFAULT_GOALS.fat,
-            updated_at: new Date().toISOString(),
+          calories: DEFAULT_GOALS.calories,
+          protein_g: DEFAULT_GOALS.protein,
+          carbohydrates_g: DEFAULT_GOALS.carbohydrates,
+          fat_g: DEFAULT_GOALS.fat,
+          updated_at: new Date().toISOString(),
+          user_id: (await supabase.auth.getUser()).data.user?.id
         };
         const { data: inserted, error: insErr } = await supabase.from('user_goals').insert([insertObj]).select().single();
         if (insErr) throw insErr;
@@ -83,6 +84,7 @@ export const goalsService = {
         carbohydrates_g: merged.carbohydrates,
         fat_g: merged.fat,
         updated_at: new Date().toISOString(),
+        user_id: (await supabase.auth.getUser()).data.user?.id
       };
       const { data, error } = await supabase.from('user_goals').upsert(upsertObj, { onConflict: 'id' }).select().single();
       if (error) throw error;
@@ -106,6 +108,7 @@ export const goalsService = {
         carbohydrates_g: DEFAULT_GOALS.carbohydrates,
         fat_g: DEFAULT_GOALS.fat,
         updated_at: new Date().toISOString(),
+        user_id: (await supabase.auth.getUser()).data.user?.id
       }, { onConflict: 'id' }).select().single();
       if (error) throw error;
       const normalized: Goals = {

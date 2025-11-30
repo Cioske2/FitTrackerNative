@@ -34,6 +34,15 @@ export const foodService = {
       is_generic: food.isGeneric ?? true,
     };
     Object.keys(dataToInsert).forEach(k => dataToInsert[k] === undefined && delete dataToInsert[k]);
+
+    // Add user_id for non-generic foods
+    if (!food.isGeneric) {
+      const user = (await supabase.auth.getUser()).data.user;
+      if (user) {
+        dataToInsert.user_id = user.id;
+      }
+    }
+
     const { data, error } = await supabase.from('foods').insert([dataToInsert]).select().single();
     if (error) throw new Error(error.message);
     return data;

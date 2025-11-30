@@ -27,7 +27,7 @@ export default function OnboardingScreen({ navigation }: any) {
         if (step < 3) {
             setStep(step + 1);
         } else {
-            // Finish
+            // Finish onboarding
             try {
                 await updateProfile({
                     goal: data.goal,
@@ -37,8 +37,10 @@ export default function OnboardingScreen({ navigation }: any) {
                     weight: Number(data.weight),
                     activity_level: data.activityLevel
                 });
+                // Navigation should happen automatically via RootNavigator
+                // when the profile is updated (onboarding_completed flag)
             } catch (e) {
-                console.error(e);
+                console.error('Error updating profile:', e);
             }
         }
     };

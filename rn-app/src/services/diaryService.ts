@@ -40,6 +40,11 @@ export const diaryService = {
 
     Object.keys(dataToInsert).forEach(k => dataToInsert[k] === undefined && delete dataToInsert[k]);
 
+    const user = (await supabase.auth.getUser()).data.user;
+    if (user) {
+      dataToInsert.user_id = user.id;
+    }
+
     const { data, error } = await supabase
       .from('diary_entries')
       .insert([dataToInsert])
@@ -112,6 +117,12 @@ export const diaryService = {
       total_fat_g: mealData.totals.fat,
       notes: mealData.notes || null
     } as any;
+
+    const user = (await supabase.auth.getUser()).data.user;
+    if (user) {
+      header.user_id = user.id;
+    }
+
     const { data: insertedMeal, error: mealErr } = await supabase.from('composite_meals').insert(header).select().single();
     if (mealErr) throw new Error(mealErr.message);
     if (!insertedMeal?.id) throw new Error('Insert composite meal failed');
@@ -126,7 +137,8 @@ export const diaryService = {
       fat_g: i.fat,
       food_database_id: i.foodId || null,
       source_database: i.source || null,
-      original_cv_name: i.originalName || i.name
+      original_cv_name: i.originalName || i.name,
+      user_id: insertedMeal.user_id
     }));
     const { error: itemsErr } = await supabase.from('composite_meal_items').insert(itemsPayload);
     if (itemsErr) { await supabase.from('composite_meals').delete().eq('id', insertedMeal.id); throw new Error(itemsErr.message); }
