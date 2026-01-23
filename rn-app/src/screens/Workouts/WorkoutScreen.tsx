@@ -65,12 +65,17 @@ export default function WorkoutScreen() {
     return ((last - first) / first) * 100;
   }, [series]);
 
-  const addCurrentToPending = () => {
+  const addCurrentToPending = async () => {
     if (!currentExercise.exerciseName || !currentExercise.sets || !currentExercise.reps) {
       Alert.alert('Mancano dati', 'Inserisci almeno nome, serie e ripetizioni.');
       return;
     }
-    setPendingExercises([...pendingExercises, { ...currentExercise, id: Date.now().toString() }]);
+
+    // Normalize exercise name using exercise library
+    const exerciseLibraryService = (await import('../../services/exerciseLibraryService')).default;
+    const normalizedName = await exerciseLibraryService.findBestMatch(currentExercise.exerciseName);
+
+    setPendingExercises([...pendingExercises, { ...currentExercise, exerciseName: normalizedName, id: Date.now().toString() }]);
     setCurrentExercise({ exerciseName: '', sets: '', reps: '', weight: '' });
   };
 
@@ -81,7 +86,10 @@ export default function WorkoutScreen() {
   const submitAll = async () => {
     let list = [...pendingExercises];
     if (currentExercise.exerciseName && currentExercise.sets && currentExercise.reps) {
-      list.push(currentExercise);
+      // Normalize current exercise name before adding to list
+      const exerciseLibraryService = (await import('../../services/exerciseLibraryService')).default;
+      const normalizedName = await exerciseLibraryService.findBestMatch(currentExercise.exerciseName);
+      list.push({ ...currentExercise, exerciseName: normalizedName });
     }
 
     if (list.length === 0) return;

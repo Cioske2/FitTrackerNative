@@ -88,13 +88,22 @@ IMPORTANTE:
       if (jsonMatch) jsonContent = jsonMatch[0];
       const parsed = JSON.parse(jsonContent);
       if (!parsed.workouts || !Array.isArray(parsed.workouts)) throw new Error('Formato workouts non valido');
-      return parsed.workouts;
+
+      // Normalize exercise names using the exercise library
+      const exerciseLibraryService = (await import('./exerciseLibraryService')).default;
+      const normalized = await Promise.all(
+        parsed.workouts.map(async (workout: any) => ({
+          ...workout,
+          exercise: await exerciseLibraryService.findBestMatch(workout.exercise),
+        }))
+      );
+      return normalized;
     } catch {
       return this.parseWorkoutTextSimple(workoutText);
     }
   }
 
-  parseWorkoutTextSimple(workoutText: string): ParsedWorkout[] {
+  async parseWorkoutTextSimple(workoutText: string): Promise<ParsedWorkout[]> {
     const workouts: ParsedWorkout[] = [];
     const lines = workoutText.split(/[\n,]/).map(line => line.trim()).filter(line => line);
     const skipWords = ['spalle', 'gambe', 'petto', 'dorsali', 'schiena', 'bicipiti', 'tricipiti', 'addome', 'addominali', 'oggi ho fatto'];
@@ -138,7 +147,17 @@ IMPORTANTE:
         continue;
       }
     }
-    return workouts;
+
+    // Normalize all exercise names
+    const exerciseLibraryService = (await import('./exerciseLibraryService')).default;
+    const normalized = await Promise.all(
+      workouts.map(async (workout) => ({
+        ...workout,
+        exercise: await exerciseLibraryService.findBestMatch(workout.exercise),
+      }))
+    );
+
+    return normalized;
   }
 
   async parseWorkout(workoutText: string): Promise<ParsedWorkout[]> {
