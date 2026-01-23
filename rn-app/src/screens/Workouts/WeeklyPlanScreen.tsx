@@ -3,7 +3,10 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Activi
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
-import { workoutService } from '../../services/workoutService';
+import workoutRepository from '../../repositories/workoutRepository';
+import { queryClient } from '../../queryClient';
+import { enqueueOfflineOperation } from '../../services/offlineSyncService';
+import { trackEvent } from '../../services/analyticsService';
 
 const DAYS = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
 
@@ -30,7 +33,10 @@ export default function WeeklyPlanScreen({ navigation }: any) {
     const loadPlans = async () => {
         setLoading(true);
         try {
-            const data = await workoutService.getAllPlans();
+            const data = await queryClient.fetchQuery({
+                queryKey: ['workoutPlans'],
+                queryFn: () => workoutRepository.getAllPlans(),
+            });
             setPlans(data);
         } catch (e) {
             console.error(e);
@@ -44,26 +50,60 @@ export default function WeeklyPlanScreen({ navigation }: any) {
         setLoading(true);
         try {
             if (editData.id) {
-                await workoutService.updatePlan(editData.id, {
+                const patch = {
                     exercise: editData.exercise,
                     sets: Number(editData.sets),
                     reps: Number(editData.reps),
                     notes: editData.notes,
                     weekday: selectedDay
-                });
+                };
+                await workoutRepository.updatePlan(editData.id, patch);
+                setPlans((prev) => prev.map((p) => (p.id === editData.id ? { ...p, ...patch } : p)));
+                trackEvent('workoutplan_update');
             } else {
-                await workoutService.addPlan({
+                const payload = {
                     weekday: selectedDay,
                     exercise: editData.exercise,
                     sets: Number(editData.sets),
                     reps: Number(editData.reps),
                     notes: editData.notes
-                });
+                };
+                const created = await workoutRepository.addPlan(payload);
+                setPlans((prev) => [...prev, created]);
+                trackEvent('workoutplan_add');
             }
-            await loadPlans();
             setIsEditing(false);
             setEditData({ id: undefined, exercise: '', sets: '', reps: '', notes: '' });
         } catch (e: any) {
+            if (editData.id) {
+                await enqueueOfflineOperation({
+                    type: 'workoutplan:update',
+                    payload: {
+                        id: editData.id,
+                        patch: {
+                            exercise: editData.exercise,
+                            sets: Number(editData.sets),
+                            reps: Number(editData.reps),
+                            notes: editData.notes,
+                            weekday: selectedDay
+                        }
+                    }
+                });
+                setPlans((prev) => prev.map((p) => (p.id === editData.id ? { ...p, exercise: editData.exercise, sets: Number(editData.sets), reps: Number(editData.reps), notes: editData.notes, weekday: selectedDay } : p)));
+                trackEvent('workoutplan_update_offline');
+            } else {
+                const local = {
+                    id: `local-${Date.now()}`,
+                    weekday: selectedDay,
+                    exercise: editData.exercise,
+                    sets: Number(editData.sets),
+                    reps: Number(editData.reps),
+                    notes: editData.notes
+                } as any;
+                await enqueueOfflineOperation({ type: 'workoutplan:add', payload: local });
+                setPlans((prev) => [...prev, local]);
+                trackEvent('workoutplan_add_offline');
+            }
             Alert.alert('Errore', e.message);
         } finally {
             setLoading(false);
@@ -77,9 +117,15 @@ export default function WeeklyPlanScreen({ navigation }: any) {
                 text: 'Elimina', style: 'destructive', onPress: async () => {
                     setLoading(true);
                     try {
-                        await workoutService.deletePlan(id);
-                        await loadPlans();
-                    } catch (e) { console.error(e); } finally { setLoading(false); }
+                        await workoutRepository.deletePlan(id);
+                        setPlans((prev) => prev.filter((p) => p.id !== id));
+                        trackEvent('workoutplan_delete');
+                    } catch (e) {
+                        await enqueueOfflineOperation({ type: 'workoutplan:delete', payload: { id } });
+                        setPlans((prev) => prev.filter((p) => p.id !== id));
+                        trackEvent('workoutplan_delete_offline');
+                        console.error(e);
+                    } finally { setLoading(false); }
                 }
             }
         ]);
@@ -105,7 +151,12 @@ export default function WeeklyPlanScreen({ navigation }: any) {
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
             <View style={styles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+                <TouchableOpacity
+                    onPress={() => navigation.goBack()}
+                    style={styles.backBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Torna indietro"
+                >
                     <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <Text style={styles.title}>Scheda Settimanale</Text>
@@ -119,6 +170,8 @@ export default function WeeklyPlanScreen({ navigation }: any) {
                             key={idx}
                             style={[styles.dayTab, selectedDay === idx && styles.dayTabActive]}
                             onPress={() => { setSelectedDay(idx); setIsEditing(false); }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Seleziona ${d}`}
                         >
                             <Text style={[styles.dayTabText, selectedDay === idx && styles.dayTabTextActive]}>{d.slice(0, 3)}</Text>
                         </TouchableOpacity>
@@ -130,7 +183,12 @@ export default function WeeklyPlanScreen({ navigation }: any) {
                 <View style={styles.dayHeader}>
                     <Text style={styles.dayTitle}>{DAYS[selectedDay]}</Text>
                     {!isEditing && (
-                        <TouchableOpacity style={styles.addBtn} onPress={() => startEdit()}>
+                        <TouchableOpacity
+                            style={styles.addBtn}
+                            onPress={() => startEdit()}
+                            accessibilityRole="button"
+                            accessibilityLabel="Aggiungi esercizio"
+                        >
                             <Ionicons name="add" size={20} color="#fff" />
                             <Text style={styles.addBtnText}>Aggiungi</Text>
                         </TouchableOpacity>
@@ -215,10 +273,20 @@ export default function WeeklyPlanScreen({ navigation }: any) {
                                         <Text style={styles.planMeta}>{item.sets} x {item.reps} {item.notes ? `• ${item.notes}` : ''}</Text>
                                     </View>
                                     <View style={styles.itemActions}>
-                                        <TouchableOpacity onPress={() => startEdit(item)} style={styles.iconBtn}>
+                                        <TouchableOpacity
+                                            onPress={() => startEdit(item)}
+                                            style={styles.iconBtn}
+                                            accessibilityRole="button"
+                                            accessibilityLabel="Modifica esercizio"
+                                        >
                                             <Ionicons name="pencil" size={18} color={colors.accent} />
                                         </TouchableOpacity>
-                                        <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.iconBtn}>
+                                        <TouchableOpacity
+                                            onPress={() => handleDelete(item.id)}
+                                            style={styles.iconBtn}
+                                            accessibilityRole="button"
+                                            accessibilityLabel="Elimina esercizio"
+                                        >
                                             <Ionicons name="trash-outline" size={18} color={colors.danger} />
                                         </TouchableOpacity>
                                     </View>

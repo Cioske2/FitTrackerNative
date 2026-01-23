@@ -1,4 +1,6 @@
 import { supabase } from './supabaseClient';
+import { logError } from '../utils/logger';
+import type { FoodRecord } from '../types/supabase';
 
 export interface FoodInsert {
   name: string;
@@ -16,10 +18,34 @@ export interface FoodInsert {
   isGeneric?: boolean;
 }
 
+
+const normalizeText = (value?: string | null) =>
+  value ? value.trim().replace(/\s+/g, ' ') : '';
+
+const normalizeBarcode = (value?: string | null) =>
+  value ? value.replace(/\s+/g, '') : '';
+
 export const foodService = {
-  addFood: async (food: FoodInsert) => {
+  addFood: async (food: FoodInsert): Promise<FoodRecord> => {
+    const normalizedName = normalizeText(food.name);
+    const normalizedBrand = normalizeText(food.brand || undefined);
+    const normalizedBarcode = normalizeBarcode(food.barcode || undefined);
+
+    if (normalizedBarcode) {
+      const existingByBarcode = await foodService.getFoodByBarcode(normalizedBarcode);
+      if (existingByBarcode) return existingByBarcode;
+    }
+
+    if (normalizedName) {
+      const existingByName = await foodService.getFoodByNameAndBrand(
+        normalizedName,
+        normalizedBrand || null,
+      );
+      if (existingByName) return existingByName;
+    }
+
     const dataToInsert: any = {
-      name: food.name,
+      name: normalizedName || food.name,
       serving_size: food.servingSize,
       serving_unit: food.serving_unit,
       calories: food.calories,
@@ -29,8 +55,8 @@ export const foodService = {
       carbohydrates_sugar_g: food.sugar === '' ? null : food.sugar,
       fat_total_g: food.fatTotal,
       fat_saturated_g: food.saturatedFat === '' ? null : food.saturatedFat,
-      barcode: food.barcode || null,
-      brand: food.brand || null,
+      barcode: normalizedBarcode || null,
+      brand: normalizedBrand || null,
       is_generic: food.isGeneric ?? true,
     };
     Object.keys(dataToInsert).forEach(k => dataToInsert[k] === undefined && delete dataToInsert[k]);
@@ -41,37 +67,79 @@ export const foodService = {
     dataToInsert.user_id = user.id;
 
     const { data, error } = await supabase.from('foods').insert([dataToInsert]).select().single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      logError(error, 'Supabase insert food failed', { name: dataToInsert.name, barcode: dataToInsert.barcode });
+      throw new Error(error.message);
+    }
     return data;
   },
 
-  getAllFoods: async () => {
+  getAllFoods: async (): Promise<FoodRecord[]> => {
     const { data, error } = await supabase.from('foods').select('*').order('name', { ascending: true });
-    if (error) throw new Error(error.message);
+    if (error) {
+      logError(error, 'Supabase getAllFoods failed');
+      throw new Error(error.message);
+    }
     return data || [];
   },
 
-  getFoodById: async (id: number) => {
+  getFoodById: async (id: number): Promise<FoodRecord | null> => {
     const { data, error } = await supabase.from('foods').select('*').eq('id', id).maybeSingle();
-    if (error && (error as any).code !== 'PGRST116') throw new Error(error.message);
+    if (error && (error as any).code !== 'PGRST116') {
+      logError(error, 'Supabase getFoodById failed', { id });
+      throw new Error(error.message);
+    }
     return data;
   },
 
-  getFoodByBarcode: async (barcode: string) => {
-    if (!barcode) return null;
-    const { data, error } = await supabase.from('foods').select('*').eq('barcode', barcode).maybeSingle();
-    if (error && (error as any).code !== 'PGRST116') throw new Error(error.message);
+  getFoodByBarcode: async (barcode: string): Promise<FoodRecord | null> => {
+    const normalized = normalizeBarcode(barcode);
+    if (!normalized) return null;
+    const { data, error } = await supabase.from('foods').select('*').eq('barcode', normalized).maybeSingle();
+    if (error && (error as any).code !== 'PGRST116') {
+      logError(error, 'Supabase getFoodByBarcode failed', { barcode: normalized });
+      throw new Error(error.message);
+    }
     return data;
   },
 
-  searchFoods: async (term: string) => {
-    if (!term?.trim()) return [];
+  getFoodByNameAndBrand: async (
+    name: string,
+    brand?: string | null,
+  ): Promise<FoodRecord | null> => {
+    const normalizedName = normalizeText(name);
+    if (!normalizedName) return null;
+    const normalizedBrand = normalizeText(brand || undefined);
+    const query = supabase
+      .from('foods')
+      .select('*')
+      .ilike('name', normalizedName)
+      .limit(1);
+    const { data, error } = normalizedBrand
+      ? await query.ilike('brand', normalizedBrand).maybeSingle()
+      : await query.maybeSingle();
+    if (error && (error as any).code !== 'PGRST116') {
+      logError(error, 'Supabase getFoodByNameAndBrand failed', {
+        name: normalizedName,
+        brand: normalizedBrand,
+      });
+      throw new Error(error.message);
+    }
+    return data;
+  },
+
+  searchFoods: async (term: string): Promise<FoodRecord[]> => {
+    const normalizedTerm = normalizeText(term);
+    if (!normalizedTerm) return [];
     const { data, error } = await supabase
       .from('foods')
       .select('*')
-      .ilike('name', `%${term.toLowerCase()}%`)
+      .ilike('name', `%${normalizedTerm.toLowerCase()}%`)
       .limit(15);
-    if (error) throw new Error(error.message);
+    if (error) {
+      logError(error, 'Supabase searchFoods failed', { term: normalizedTerm });
+      throw new Error(error.message);
+    }
     return data || [];
   },
 };

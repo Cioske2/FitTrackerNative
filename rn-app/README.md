@@ -8,7 +8,7 @@
 
 ### Diario Alimentare
 - **Registrazione pasti giornalieri** con calcolo automatico dei macronutrienti
-- **Scansione barcode** con integrazione Open Food Repo e OpenFoodFacts come fallback
+- **Scansione barcode** con integrazione OpenFoodFacts
 - **Ricerca alimenti** nel database Supabase con aggiunta rapida
 - **Analisi pasti tramite foto AI** (Gemini Vision): scatta o carica una foto del piatto e ottieni automaticamente ingredienti e macros stimati
 - **Cronologia giornaliera** con totali calorici e macro visualizzati in tempo reale
@@ -66,10 +66,8 @@
   - Correzione/ricerca info nutrizionali prodotti
 - **OpenRouter** (DeepSeek R1):
   - Parsing intelligente schede di allenamento
-- **Open Food Repo** (API diretta client-side):
-  - Ricerca prodotti tramite barcode (primaria)
-- **OpenFoodFacts** (fallback):
-  - Database pubblico prodotti alimentari internazionali
+- **OpenFoodFacts**:
+  - Database pubblico prodotti alimentari internazionali (barcode)
 
 ---
 
@@ -110,7 +108,7 @@ rn-app/
 │   │   ├── foodService.ts              # CRUD alimenti
 │   │   ├── diaryService.ts             # CRUD diario
 │   │   ├── workoutService.ts           # CRUD allenamenti + scheda
-│   │   ├── barcodeService.ts           # Lookup barcode (FoodRepo + OFF)
+│   │   ├── barcodeService.ts           # Lookup barcode (OpenFoodFacts)
 │   │   ├── geminiService.ts            # Integrazioni Gemini AI
 │   │   ├── imageMealAnalysisService.ts # Analisi foto pasti
 │   │   ├── workoutParser.ts            # Parsing AI schede allenamento
@@ -150,7 +148,7 @@ rn-app/
 - API Keys:
   - **Gemini API Key** (Google AI Studio)
   - **OpenRouter API Key** (per parsing allenamenti AI)
-  - **Open Food Repo API Key** (per barcode scanning)
+  - **OpenFoodFacts** (barcode scanning)
 
 ### 1. Clona il Repository
 
@@ -181,7 +179,7 @@ GEMINI_API_KEY=your-gemini-api-key
 OPENROUTER_API_KEY=your-openrouter-api-key
 
 # Food APIs
-OPENFOODREPO_API_KEY=your-foodrepo-api-key
+# (OpenFoodFacts è pubblico, nessuna API key necessaria)
 ```
 
 > ⚠️ **Nota Sicurezza**: Le API keys inserite nel file `.env` vengono incluse nell'APK finale tramite `app.config.js` (extra config). Le chiavi saranno visibile a chiunque decompili l'app. Usa questa configurazione solo se accetti questo rischio. Per ambienti di produzione, considera un backend proxy per proteggere le chiavi.
@@ -234,7 +232,7 @@ Usa l'app **Expo Go** (iOS/Android) per testare su dispositivo fisico, oppure un
 ### 3. **Diario Alimentare**
 - **Aggiungi alimento**:
   - Ricerca nel database tramite barra di ricerca
-  - Scansiona barcode (tap icona scanner) per aggiunta automatica da Open Food Repo/OpenFoodFacts
+  - Scansiona barcode (tap icona scanner) per aggiunta automatica da OpenFoodFacts
   - Inserimento manuale rapido con nome, quantità e macro
   - Analisi pasto AI: scatta foto o scegli dalla galleria, l'AI identifica piatti e stima macro
 - **Modifica/Elimina**: tap su una voce per modificare quantità/macro o eliminarla
@@ -255,9 +253,9 @@ Usa l'app **Expo Go** (iOS/Android) per testare su dispositivo fisico, oppure un
 
 ### 6. **Scanner Barcode**
 - Inquadra il codice a barre del prodotto
-- Ricerca automatica su Open Food Repo (primaria) e OpenFoodFacts (fallback)
+- Ricerca automatica su OpenFoodFacts
 - Conferma quantità e aggiungi al diario
-- Badge visivo indica la fonte del prodotto (FoodRepo / OpenFoodFacts)
+- Badge visivo indica la fonte del prodotto (OpenFoodFacts)
 
 ### 7. **Analisi Pasto AI (Gemini Vision)**
 - Tap su "Analisi Pasto" nel diario
@@ -420,7 +418,7 @@ Questo progetto è distribuito sotto licenza MIT. Vedi file `LICENSE` per dettag
 - **Supabase** per backend e autenticazione
 - **Google Gemini** per AI vision e analisi testi
 - **OpenRouter** per parsing intelligente
-- **Open Food Repo** e **OpenFoodFacts** per database prodotti alimentari
+- **OpenFoodFacts** per database prodotti alimentari
 
 ---
 

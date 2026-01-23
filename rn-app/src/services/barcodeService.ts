@@ -1,9 +1,8 @@
-import Constants from "expo-constants";
+import { z } from "zod";
 import foodService from "./foodService";
-
-const extra = Constants.expoConfig?.extra || {};
-// Proxy base URL (può essere configurato in app.config.js -> extra.PROXY_BASE_URL)
-const PROXY_BASE_URL = extra.PROXY_BASE_URL || extra.API_BASE_URL || "";
+import { fetchWithRetry } from "../utils/http";
+import { logError } from "../utils/logger";
+import type { FoodRecord } from "../types/supabase";
 
 export interface OpenFoodFactsProduct {
   product_name: string;
@@ -28,20 +27,54 @@ export interface OpenFoodFactsProduct {
 export interface BarcodeLookupResult {
   product: OpenFoodFactsProduct;
   created: boolean; // true se inserito in Supabase ora
-  foodRecord: any; // record nella tabella foods
-  // visual source — only FoodRepo or OpenFoodFacts (Supabase is ignored for UI)
-  source: 'FoodRepo' | 'OpenFoodFacts';
+  foodRecord: FoodRecord; // record nella tabella foods
+  // visual source — OpenFoodFacts (Supabase is ignored for UI)
+  source: 'OpenFoodFacts';
+}
+
+const BARCODE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+const barcodeCache = new Map<
+  string,
+  { ts: number; result: BarcodeLookupResult | null }
+>();
+
+const openFoodFactsSchema = z.object({
+  product: z
+    .object({
+      product_name: z.string().optional().nullable(),
+      generic_name: z.string().optional().nullable(),
+      product_name_it: z.string().optional().nullable(),
+      product_name_en: z.string().optional().nullable(),
+      image_front_url: z.string().optional().nullable(),
+      image_url: z.string().optional().nullable(),
+      image_small_url: z.string().optional().nullable(),
+      brands: z.string().optional().nullable(),
+      quantity: z.string().optional().nullable(),
+      categories: z.string().optional().nullable(),
+      nutriments: z.record(z.any()).optional().nullable(),
+      code: z.string().optional().nullable(),
+      id: z.string().optional().nullable(),
+    })
+    .optional(),
+});
+
+function normalizeBarcode(barcode: string) {
+  return barcode.replace(/\s+/g, "");
 }
 
 function mapToFoodInsert(p: OpenFoodFactsProduct) {
+  const safeNum = (value: unknown) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  };
   return {
     name: p.product_name,
     servingSize: 100,
     serving_unit: "g",
-    calories: Number(p.nutriments["energy-kcal_100g"]) || 0,
-    protein: Number(p.nutriments["proteins_100g"]) || 0,
-    carbsTotal: Number(p.nutriments["carbohydrates_100g"]) || 0,
-    fatTotal: Number(p.nutriments["fat_100g"]) || 0,
+    calories: safeNum(p.nutriments["energy-kcal_100g"]),
+    protein: safeNum(p.nutriments["proteins_100g"]),
+    carbsTotal: safeNum(p.nutriments["carbohydrates_100g"]),
+    fatTotal: safeNum(p.nutriments["fat_100g"]),
     fiber: p.nutriments["fiber_100g"] ?? null,
     sugar: p.nutriments["sugars_100g"] ?? null,
     barcode: p.gtin,
@@ -50,113 +83,58 @@ function mapToFoodInsert(p: OpenFoodFactsProduct) {
   };
 }
 
-// Chiamata diretta Open Food Repo dal client
-export async function fetchProductFromOpenFoodRepo(
-  barcode: string
-): Promise<OpenFoodFactsProduct | null> {
-  if (!barcode) return null;
-  const apiKey = Constants.expoConfig?.extra?.OPENFOODREPO_API_KEY;
-  if (!apiKey) return null;
-  const url = `https://www.foodrepo.org/api/v3/products?barcodes=${encodeURIComponent(
-    barcode
-  )}&page[size]=1`;
-  try {
-    const resp = await fetch(url, {
-      headers: {
-        authorization: `Token token=\"${apiKey}\"`,
-        accept: "application/json",
-      },
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    if (
-      !data ||
-      !data.data ||
-      !Array.isArray(data.data) ||
-      data.data.length === 0
-    )
-      return null;
-    const p = data.data[0];
-    // Mappa la risposta Food Repo al formato atteso
-    const names = p.name_translations || {};
-    const product_name =
-      names.it || names.en || names.de || p.name || p.barcode || "";
-    const images = p.images || [];
-    let image_url = null;
-    if (Array.isArray(images) && images.length > 0) {
-      const first = images[0];
-      image_url =
-        (first && (first.large_url || first.original_url || first.thumb_url)) ||
-        null;
-    }
-    const nutrients = p.nutrients || {};
-    function get(pathArr: string[]) {
-      let cur: any = nutrients;
-      for (const seg of pathArr) {
-        if (!cur) return null;
-        cur = cur[seg];
-      }
-      return cur === undefined || cur === null || cur === "" ? null : cur;
-    }
-    return {
-      product_name,
-      image_url,
-      brands: p.brand || p.brands || null,
-      quantity: p.quantity || null,
-      categories: null,
-      nutriments: {
-        "energy-kcal_100g": get(["energy", "per_hundred"]),
-        fat_100g: get(["fat", "per_hundred"]),
-        "saturated-fat_100g":
-          get(["saturated_fat", "per_hundred"]) ||
-          get(["saturated-fat", "per_hundred"]),
-        carbohydrates_100g: get(["carbohydrates", "per_hundred"]),
-        sugars_100g: get(["sugars", "per_hundred"]),
-        fiber_100g:
-          get(["fibers", "per_hundred"]) || get(["fiber", "per_hundred"]),
-        proteins_100g: get(["proteins", "per_hundred"]),
-      },
-      gtin: p.barcode || null,
-    };
-  } catch {
-    return null;
-  }
-}
-
 // Fallback: OpenFoodFacts API pubblica
 export async function fetchProductFromOpenFoodFacts(
   barcode: string
 ): Promise<OpenFoodFactsProduct | null> {
   if (!barcode) return null;
+  const normalizedBarcode = normalizeBarcode(barcode);
   const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(
-    barcode
+    normalizedBarcode
   )}.json`;
   try {
-    const resp = await fetch(url);
+    const resp = await fetchWithRetry(url, undefined, {
+      retries: 2,
+      backoffMs: 400,
+      timeoutMs: 8000,
+    });
     if (!resp.ok) return null;
     const data = await resp.json();
-    if (!data || !data.product) return null;
-    const p = data.product;
+    const parsed = openFoodFactsSchema.safeParse(data);
+    if (!parsed.success || !parsed.data.product) return null;
+    const p = parsed.data.product;
+    const product_name =
+      p.product_name ||
+      p.generic_name ||
+      p.product_name_it ||
+      p.product_name_en ||
+      p.brands ||
+      `Prodotto ${normalizedBarcode}`;
+    const toNumber = (value: unknown) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    };
     return {
-      product_name: p.product_name || p.generic_name || "",
+      product_name,
       image_url: p.image_front_url || p.image_url || p.image_small_url || null,
       brands: p.brands || null,
       quantity: p.quantity || null,
       categories: p.categories || null,
       nutriments: {
-        "energy-kcal_100g": p.nutriments?.["energy-kcal_100g"] ?? null,
-        fat_100g: p.nutriments?.["fat_100g"] ?? null,
-        "saturated-fat_100g": p.nutriments?.["saturated-fat_100g"] ?? null,
-        carbohydrates_100g: p.nutriments?.["carbohydrates_100g"] ?? null,
-        sugars_100g: p.nutriments?.["sugars_100g"] ?? null,
-        fiber_100g: p.nutriments?.["fiber_100g"] ?? null,
-        proteins_100g: p.nutriments?.["proteins_100g"] ?? null,
-        salt_100g: p.nutriments?.["salt_100g"] ?? null,
-        sodium_100g: p.nutriments?.["sodium_100g"] ?? null,
+        "energy-kcal_100g": toNumber(p.nutriments?.["energy-kcal_100g"]),
+        fat_100g: toNumber(p.nutriments?.["fat_100g"]),
+        "saturated-fat_100g": toNumber(p.nutriments?.["saturated-fat_100g"]),
+        carbohydrates_100g: toNumber(p.nutriments?.["carbohydrates_100g"]),
+        sugars_100g: toNumber(p.nutriments?.["sugars_100g"]),
+        fiber_100g: toNumber(p.nutriments?.["fiber_100g"]),
+        proteins_100g: toNumber(p.nutriments?.["proteins_100g"]),
+        salt_100g: toNumber(p.nutriments?.["salt_100g"]),
+        sodium_100g: toNumber(p.nutriments?.["sodium_100g"]),
       },
-      gtin: p.code || p.id || null,
+      gtin: p.code || p.id || normalizedBarcode || null,
     };
-  } catch {
+  } catch (error) {
+    logError(error, "OpenFoodFacts lookup failed", { barcode: normalizedBarcode });
     return null;
   }
 }
@@ -164,12 +142,16 @@ export async function fetchProductFromOpenFoodFacts(
 export async function lookupAndEnsureFood(
   barcode: string
 ): Promise<BarcodeLookupResult | null> {
+  const normalizedBarcode = normalizeBarcode(barcode);
+  if (!normalizedBarcode) return null;
+  const cached = barcodeCache.get(normalizedBarcode);
+  if (cached && Date.now() - cached.ts < BARCODE_CACHE_TTL) {
+    return cached.result;
+  }
   // 1. Cerca già in Supabase
-  const existing = await foodService.getFoodByBarcode(barcode);
+  const existing = await foodService.getFoodByBarcode(normalizedBarcode);
   if (existing) {
-    // When product exists in Supabase we still want to show a visual source
-    // but we don't want to show 'Supabase'. Default to 'FoodRepo' for UI.
-    return {
+    const result = {
       product: {
         product_name: existing.name,
         image_url: null,
@@ -186,30 +168,30 @@ export async function lookupAndEnsureFood(
           fiber_100g: existing.carbohydrates_fiber_g,
           sugars_100g: existing.carbohydrates_sugar_g,
         } as any,
-        gtin: barcode,
+        gtin: normalizedBarcode,
       },
       created: false,
       foodRecord: existing,
-      source: 'FoodRepo',
+      source: 'OpenFoodFacts',
     };
+    barcodeCache.set(normalizedBarcode, { ts: Date.now(), result });
+    return result;
   }
-  // 2. Prova prima Open Food Repo (primaria)
-  let product = await fetchProductFromOpenFoodRepo(barcode);
-  let source: 'FoodRepo' | 'OpenFoodFacts' = 'FoodRepo';
-  // 2b. Se non trovato in FoodRepo, fallback a OpenFoodFacts
+  // 2. OpenFoodFacts
+  const product = await fetchProductFromOpenFoodFacts(normalizedBarcode);
   if (!product) {
-    product = await fetchProductFromOpenFoodFacts(barcode);
-    source = 'OpenFoodFacts';
+    barcodeCache.set(normalizedBarcode, { ts: Date.now(), result: null });
+    return null;
   }
-  if (!product) return null;
   // 3. Inserisci in Supabase
   const insertPayload = mapToFoodInsert(product);
   const created = await foodService.addFood(insertPayload);
-  return { product, created: true, foodRecord: created, source };
+  const result = { product, created: true, foodRecord: created, source: 'OpenFoodFacts' };
+  barcodeCache.set(normalizedBarcode, { ts: Date.now(), result });
+  return result;
 }
 
 export const barcodeService = {
-  fetchProductFromOpenFoodRepo,
   fetchProductFromOpenFoodFacts,
   lookupAndEnsureFood,
 };

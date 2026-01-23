@@ -1,4 +1,6 @@
 import Constants from 'expo-constants';
+import { fetchWithRetry } from '../utils/http';
+import { logError } from '../utils/logger';
 
 const extra = Constants.expoConfig?.extra || {};
 const USDA_API_KEY = extra.USDA_API_KEY;
@@ -10,10 +12,15 @@ const OPENFOODFACTS_API_URL = extra.OPENFOODFACTS_API_URL || 'https://world.open
 
 async function searchOpenFoodFacts(searchTerm: string) {
   if (!OPENFOODFACTS_ENABLED) return [];
-  const resp = await fetch(`${OPENFOODFACTS_API_URL}/search?search_terms=${encodeURIComponent(searchTerm)}&search_tag=food&json=1&page_size=10&fields=product_name,nutriments,code,brands,quantity,serving_size,categories_tags,product_name_en,product_name_it`);
+  const normalizedTerm = searchTerm.trim();
+  const resp = await fetchWithRetry(`${OPENFOODFACTS_API_URL}/search?search_terms=${encodeURIComponent(normalizedTerm)}&search_tag=food&json=1&page_size=10&fields=product_name,nutriments,code,brands,quantity,serving_size,categories_tags,product_name_en,product_name_it`, undefined, {
+    retries: 2,
+    backoffMs: 400,
+    timeoutMs: 8000,
+  });
   const json = await resp.json();
   if (!json?.products) return [];
-  const searchTermLower = searchTerm.toLowerCase();
+  const searchTermLower = normalizedTerm.toLowerCase();
   const relevant = json.products.filter((p: any) => {
     const name = (p.product_name_en || p.product_name_it || p.product_name || '').toLowerCase();
     if (!name || !name.includes(searchTermLower)) return false;
@@ -38,9 +45,14 @@ async function searchOpenFoodFacts(searchTerm: string) {
 
 async function searchUSDA(searchTerm: string) {
   if (!USDA_API_KEY) return [];
-  const url = `${USDA_API_URL}/foods/search?query=${encodeURIComponent(searchTerm)}&api_key=${USDA_API_KEY}&pageSize=5&dataType=${encodeURIComponent('Survey (FNDDS),Branded')}`;
+  const normalizedTerm = searchTerm.trim();
+  const url = `${USDA_API_URL}/foods/search?query=${encodeURIComponent(normalizedTerm)}&api_key=${USDA_API_KEY}&pageSize=5&dataType=${encodeURIComponent('Survey (FNDDS),Branded')}`;
   try {
-    const resp = await fetch(url);
+    const resp = await fetchWithRetry(url, undefined, {
+      retries: 2,
+      backoffMs: 400,
+      timeoutMs: 8000,
+    });
     const json = await resp.json();
     if (!json?.foods) return [];
     return json.foods.map((food: any) => {
@@ -61,15 +73,22 @@ async function searchUSDA(searchTerm: string) {
         nutrients,
       };
     });
-  } catch { return []; }
+  } catch (error) {
+    logError(error, 'USDA search failed', { term: normalizedTerm });
+    return [];
+  }
 }
 
 export async function fetchNutritionInfo(foodName: string) {
   if (!foodName?.trim()) return [];
   let results: any[] = [];
-  try { results = results.concat(await searchOpenFoodFacts(foodName)); } catch {}
+  try { results = results.concat(await searchOpenFoodFacts(foodName)); } catch (error) {
+    logError(error, 'OpenFoodFacts search failed', { term: foodName });
+  }
   if (results.length < 3) {
-    try { results = results.concat(await searchUSDA(foodName)); } catch {}
+    try { results = results.concat(await searchUSDA(foodName)); } catch (error) {
+      logError(error, 'USDA search fallback failed', { term: foodName });
+    }
   }
   const unique: any[] = [];
   results.forEach(r => {

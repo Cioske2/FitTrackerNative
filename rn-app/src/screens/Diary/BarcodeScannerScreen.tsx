@@ -33,11 +33,11 @@ export default function BarcodeScannerScreen({ navigation }: ScannerProps) {
       const lookup = await barcodeService.lookupAndEnsureFood(code);
       if (!lookup) throw new Error('Non trovato');
       const f = lookup.foodRecord;
-      // Salviamo anteprima per conferma, includendo la sorgente (FoodRepo/OpenFoodFacts/Supabase)
+      // Salviamo anteprima per conferma, includendo la sorgente (OpenFoodFacts/Supabase)
       setProductPreview({
         food: f,
         product: lookup.product,
-        source: lookup.source || 'FoodRepo'
+        source: lookup.source || 'OpenFoodFacts'
       });
       setQty('100');
       setModalVisible(true);
@@ -137,10 +137,7 @@ export default function BarcodeScannerScreen({ navigation }: ScannerProps) {
                 <Text style={styles.modalTitle}>{productPreview.food.name}</Text>
                 {/* Source badge */}
                 {productPreview?.source ? (
-                  <View style={[
-                    styles.sourceBadge,
-                    productPreview.source === 'FoodRepo' ? styles.badgeFoodRepo : styles.badgeOFF
-                  ]}>
+                  <View style={[styles.sourceBadge, styles.badgeOFF]}>
                     <Text style={styles.sourceText}>{productPreview.source}</Text>
                   </View>
                 ) : null}
@@ -202,7 +199,6 @@ const styles = StyleSheet.create({
   ,btnConfirm:{ backgroundColor:'#34d399' }
   ,btnConfirmText:{ color:'#04140a', fontSize:14, fontWeight:'700', letterSpacing:0.5 }
   ,sourceBadge:{ alignSelf:'flex-start', paddingVertical:4, paddingHorizontal:8, borderRadius:12, marginBottom:10 }
-  ,badgeFoodRepo:{ backgroundColor:'#2563eb' }
   ,badgeOFF:{ backgroundColor:'#16a34a' }
   ,sourceText:{ color:'#fff', fontSize:12, fontWeight:'700' }
 });

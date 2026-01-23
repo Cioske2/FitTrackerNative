@@ -1,7 +1,10 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, TouchableOpacity, View, Text, TextInput, ScrollView, Pressable } from 'react-native';
-import { workoutService } from '../../services/workoutService';
+import workoutRepository from '../../repositories/workoutRepository';
+import { queryClient } from '../../queryClient';
+import { enqueueOfflineOperation } from '../../services/offlineSyncService';
+import { trackEvent } from '../../services/analyticsService';
 
 type PlanType = { id: string; weekday: number; exercise: string; sets: number; reps: number; notes?: string; exerciseName?: string };
 interface WeeklyPlanModalProps {
@@ -38,36 +41,80 @@ function WeeklyPlanModal({ visible, onClose, plans, onPlansChange }: WeeklyPlanM
     try {
       if (edit.id) {
         // Modifica
-        await workoutService.updatePlan(edit.id, {
+        const patch = {
           weekday: edit.weekday,
           exercise: edit.exercise,
           sets: Number(edit.sets),
           reps: Number(edit.reps),
           notes: edit.notes
-        });
+        };
+        await workoutRepository.updatePlan(edit.id, patch);
+        trackEvent('workoutplan_update');
       } else {
         // Aggiunta
-        await workoutService.addPlan({
+        const payload = {
           weekday: edit.weekday,
           exercise: edit.exercise,
           sets: Number(edit.sets),
           reps: Number(edit.reps),
           notes: edit.notes
-        });
+        };
+        await workoutRepository.addPlan(payload);
+        trackEvent('workoutplan_add');
       }
       // Aggiorna lista
-      const updated = await workoutService.getAllPlans();
+      const updated = await queryClient.fetchQuery({
+        queryKey: ['workoutPlans'],
+        queryFn: () => workoutRepository.getAllPlans(),
+      });
       onPlansChange(updated);
-    } catch (e) { }
+    } catch (e) {
+      if (edit.id) {
+        await enqueueOfflineOperation({
+          type: 'workoutplan:update',
+          payload: {
+            id: edit.id,
+            patch: {
+              weekday: edit.weekday,
+              exercise: edit.exercise,
+              sets: Number(edit.sets),
+              reps: Number(edit.reps),
+              notes: edit.notes
+            }
+          }
+        });
+        trackEvent('workoutplan_update_offline');
+      } else {
+        const local = {
+          id: `local-${Date.now()}`,
+          weekday: edit.weekday,
+          exercise: edit.exercise,
+          sets: Number(edit.sets),
+          reps: Number(edit.reps),
+          notes: edit.notes
+        } as any;
+        await enqueueOfflineOperation({ type: 'workoutplan:add', payload: local });
+        trackEvent('workoutplan_add_offline');
+        onPlansChange([...plans, local]);
+      }
+    }
     setEdit(null); setAddingDay(null); setLoading(false);
   };
   const handleDelete = async (id: string) => {
     setLoading(true);
     try {
-      await workoutService.deletePlan(id);
-      const updated = await workoutService.getAllPlans();
+      await workoutRepository.deletePlan(id);
+      const updated = await queryClient.fetchQuery({
+        queryKey: ['workoutPlans'],
+        queryFn: () => workoutRepository.getAllPlans(),
+      });
       onPlansChange(updated);
-    } catch (e) { }
+      trackEvent('workoutplan_delete');
+    } catch (e) {
+      await enqueueOfflineOperation({ type: 'workoutplan:delete', payload: { id } });
+      onPlansChange(plans.filter((p) => p.id !== id));
+      trackEvent('workoutplan_delete_offline');
+    }
     setEdit(null); setAddingDay(null); setLoading(false);
   };
 
@@ -81,7 +128,12 @@ function WeeklyPlanModal({ visible, onClose, plans, onPlansChange }: WeeklyPlanM
               <View key={dayIdx} style={{ marginBottom: 18 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6, justifyContent: 'space-between' }}>
                   <Text style={{ fontWeight: '600', color: '#bfc6d1', fontSize: 15 }}>{days[dayIdx]}</Text>
-                  <TouchableOpacity onPress={() => { setAddingDay(dayIdx); setEdit({ id: undefined, weekday: dayIdx, exercise: '', sets: '', reps: '', notes: '' }); }} style={{ paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#31343a', borderRadius: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => { setAddingDay(dayIdx); setEdit({ id: undefined, weekday: dayIdx, exercise: '', sets: '', reps: '', notes: '' }); }}
+                    style={{ paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#31343a', borderRadius: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Aggiungi esercizio per ${days[dayIdx]}`}
+                  >
                     <Text style={{ fontSize: 15, fontWeight: '700', color: '#7ee787' }}>＋</Text>
                   </TouchableOpacity>
                 </View>
@@ -120,10 +172,20 @@ function WeeklyPlanModal({ visible, onClose, plans, onPlansChange }: WeeklyPlanM
                       <Text style={{ color: '#bfc6d1', fontSize: 13 }}>{ex.sets}x{ex.reps} {ex.notes ? ' - ' + ex.notes : ''}</Text>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 6 }}>
-                      <TouchableOpacity onPress={() => setEdit({ id: ex.id, weekday: ex.weekday, exercise: ex.exerciseName || ex.exercise, sets: String(ex.sets), reps: String(ex.reps), notes: ex.notes || '' })} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(126, 231, 135, 0.15)', borderWidth: 1, borderColor: 'rgba(126, 231, 135, 0.3)', alignItems: 'center', justifyContent: 'center' }}>
+                      <TouchableOpacity
+                        onPress={() => setEdit({ id: ex.id, weekday: ex.weekday, exercise: ex.exerciseName || ex.exercise, sets: String(ex.sets), reps: String(ex.reps), notes: ex.notes || '' })}
+                        style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(126, 231, 135, 0.15)', borderWidth: 1, borderColor: 'rgba(126, 231, 135, 0.3)', alignItems: 'center', justifyContent: 'center' }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Modifica esercizio"
+                      >
                         <Text style={{ color: '#7ee787', fontSize: 14, fontWeight: '600' }}>✎</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleDelete(ex.id)} style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(239, 68, 68, 0.15)', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)', alignItems: 'center', justifyContent: 'center' }}>
+                      <TouchableOpacity
+                        onPress={() => handleDelete(ex.id)}
+                        style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(239, 68, 68, 0.15)', borderWidth: 1, borderColor: 'rgba(239, 68, 68, 0.3)', alignItems: 'center', justifyContent: 'center' }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Elimina esercizio"
+                      >
                         <Text style={{ color: '#ef4444', fontSize: 14, fontWeight: '600' }}>✕</Text>
                       </TouchableOpacity>
                     </View>
@@ -188,7 +250,10 @@ export default function DashboardScreen({ navigation }: any) {
   // Carica la scheda settimanale completa
   const [allPlans, setAllPlans] = useState<PlanType[]>([]);
   useEffect(() => {
-    workoutService.getAllPlans().then(setAllPlans).catch(() => { });
+    queryClient.fetchQuery({
+      queryKey: ['workoutPlans'],
+      queryFn: () => workoutRepository.getAllPlans(),
+    }).then(setAllPlans).catch(() => { });
   }, []);
   // ...existing code...
   const { date, load, entries, loading, compositeMeals, loadCompositeMeals } = useDiaryStore();

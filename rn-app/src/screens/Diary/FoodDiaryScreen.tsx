@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, Pressable, ActivityIndicator, RefreshControl, TextInput, KeyboardAvoidingView, Platform, ScrollView, useWindowDimensions, Alert, Modal } from 'react-native';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, Pressable, ActivityIndicator, TextInput, KeyboardAvoidingView, Platform, FlatList, useWindowDimensions, Alert, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 import { useDiaryStore } from '../../store/diaryStore';
 import { useFoodStore } from '../../store/foodStore';
-import { foodService } from '../../services/foodService';
+import foodRepository from '../../repositories/foodRepository';
 
 interface QuickAddState {
   name: string;
@@ -20,7 +20,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 type Props = { navigation: NativeStackNavigationProp<any> };
 export default function FoodDiaryScreen({ navigation }: Props) {
   const { entries, load, loading, date, addEntry, setDate, removeEntry, compositeMeals, loadCompositeMeals, loadingComposite } = useDiaryStore();
-  const { search, setSearch, runSearch, results } = useFoodStore();
+  const { search, setSearch, runSearch, results, loading: searchLoading } = useFoodStore();
   const [quick, setQuick] = useState<QuickAddState>({ name: '', quantity: '100', calories: '0', protein: '0', carbs: '0', fat: '0' });
   const [adding, setAdding] = useState(false);
   // panel removed; add form always visible
@@ -28,6 +28,21 @@ export default function FoodDiaryScreen({ navigation }: Props) {
   const [addingQuick, setAddingQuick] = useState(false);
 
   useEffect(() => { load(); if (loadCompositeMeals) loadCompositeMeals(); }, [date]);
+
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (!search.trim()) {
+      runSearch('');
+      return;
+    }
+    searchDebounceRef.current = setTimeout(() => {
+      runSearch(search);
+    }, 350);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [search, runSearch]);
 
   const [mealType, setMealType] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
@@ -161,9 +176,7 @@ export default function FoodDiaryScreen({ navigation }: Props) {
     setDate(next);
   };
 
-  const sections = useMemo(() => buildSections(entries), [entries]);
   const keyExtractor = useCallback((i: any) => String(i.id), []);
-  const getItemLayout = useCallback((_: any, index: number) => ({ length: 72, offset: 72 * index, index }), []);
   const { width } = useWindowDimensions();
   const contentWrapperStyle = useMemo(() => [styles.contentWrapper, width > 720 && styles.contentWrapperWide], [width]);
 
@@ -178,7 +191,7 @@ export default function FoodDiaryScreen({ navigation }: Props) {
     try {
       // 1. Create the food first to get a valid ID
       const servingSize = numeric(manualForm.quantity) || 100;
-      const newFood = await foodService.addFood({
+      const newFood = await foodRepository.addFood({
         name: manualForm.name.trim(),
         servingSize: servingSize,
         serving_unit: manualForm.unit || 'g',
@@ -216,6 +229,35 @@ export default function FoodDiaryScreen({ navigation }: Props) {
     finally { setManualSubmitting(false); }
   };
 
+  const renderEntry = useCallback(({ item }: { item: any }) => (
+    <View style={styles.entry}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.entryText}>{item.food_name_snapshot}</Text>
+        {item.meal_type === 'AI' ? (
+          <Text style={styles.entryQty}>{Math.round(item.calories_calculated)} kcal</Text>
+        ) : (
+          <Text style={styles.entryQty}>{item.consumed_quantity}{item.consumed_unit} · {Math.round(item.calories_calculated)} kcal</Text>
+        )}
+      </View>
+      <View style={styles.rowActions}>
+        <Pressable
+          onPress={() => navigation.navigate('EditDiaryEntry', { id: item.id })}
+          accessibilityRole="button"
+          accessibilityLabel="Modifica voce diario"
+        >
+          <Text style={styles.action}>✎</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => removeEntry(item.id)}
+          accessibilityRole="button"
+          accessibilityLabel="Elimina voce diario"
+        >
+          <Text style={styles.actionDelete}>✕</Text>
+        </Pressable>
+      </View>
+    </View>
+  ), [navigation, removeEntry]);
+
   return (
     <View style={styles.container}>
       <View style={contentWrapperStyle}>
@@ -227,113 +269,135 @@ export default function FoodDiaryScreen({ navigation }: Props) {
           </View>
           <Text style={styles.myDiaryLabel}>Diario Alimentare</Text>
         </View>
-        {/* Add form now primary */}
-        <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={{ paddingBottom: 40 }}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={16} color={colors.textMuted} style={{ marginRight: 8 }} />
-            <TextInput
-              placeholder='Cerca alimento'
-              placeholderTextColor={colors.textMuted}
-              style={styles.searchInput}
-              value={search}
-              onChangeText={(t: string) => { setSearch(t); runSearch(t); }}
-            />
-          </View>
-          {results.length > 0 && (
-            <View style={styles.resultsDropdown}>
-              {results.slice(0, 6).map(r => (
-                <Pressable key={r.id} style={styles.resultRow} onPress={() => addFromSearch(r)}>
-                  <Text style={styles.resultText}>{r.name}</Text>
-                  <Text style={styles.resultCals}>{Math.round(r.calories || 0)} kcal</Text>
-                  <Ionicons name='add-circle-outline' size={20} color={colors.accent} />
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {/* Action Buttons */}
-          <Pressable style={styles.actionRow} onPress={() => navigation.navigate('BarcodeScanner')}>
-            <View style={styles.actionIcon}><Ionicons name="barcode-outline" size={24} color={colors.accent} /></View>
-            <Text style={styles.actionLabel}>Scansiona codice a barre</Text>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </Pressable>
-
-          <Pressable style={styles.actionRow} onPress={() => navigation.navigate('MealAnalysis')}>
-            <View style={styles.actionIcon}><Ionicons name="sparkles-outline" size={24} color={colors.accent} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.actionLabel}>Analizza pasto</Text>
-              <Text style={styles.actionSub}>Nuova funzione</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </Pressable>
-
-          <Pressable style={styles.actionRow} onPress={() => setManualModal(true)}>
-            <View style={styles.actionIcon}><Ionicons name="create-outline" size={24} color={colors.accent} /></View>
-            <Text style={styles.actionLabel}>Manuale</Text>
-            <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-          </Pressable>
-
-          <Text style={styles.recentsHeader}>Alimenti Recenti & Pasti</Text>
-          {combinedItems.map(item => {
-            if (item.type === 'food') {
-              const r = item.data;
-              return (
-                <View key={`f-${r.id}`} style={styles.recentCard}>
-                  <View style={styles.thumb}>{chooseEmoji(r.food_name_snapshot, {
-                    calories: r.calories_calculated,
-                    protein: r.protein_g_calculated,
-                    carbs: r.carbohydrates_total_g_calculated,
-                    fat: r.fat_total_g_calculated
-                  })}</View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.recentName}>{r.food_name_snapshot}</Text>
-                    <Text style={styles.recentQty}>{r.consumed_quantity}{r.consumed_unit} · {Math.round(r.calories_calculated || 0)} kcal</Text>
-                  </View>
-                  {/* Add button removed as requested */}
-                </View>
-              );
-            }
-            if (item.type === 'compositeItem') {
-              const it = item.data; // composite_meal_item row
-              return (
-                <View key={`ci-${it.id}`} style={styles.recentCard}>
-                  <View style={styles.thumb}>{chooseEmoji(it.item_name, {
-                    calories: it.calories,
-                    protein: it.protein_g,
-                    carbs: it.carbohydrates_g,
-                    fat: it.fat_g
-                  })}</View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.recentName}>{it.item_name}</Text>
-                    <Text style={styles.recentQty}>{Math.round(it.calories)} kcal · P{Math.round(it.protein_g)} C{Math.round(it.carbohydrates_g)} F{Math.round(it.fat_g)}</Text>
-                  </View>
-                  {/* Add button removed as requested */}
-                </View>
-              );
-            }
-            return null;
-          })}
-          {combinedItems.length === 0 && !loadingComposite && <Text style={styles.noRecent}>Nessun alimento o pasto AI</Text>}
-          <Text style={[styles.recentsHeader, { marginTop: 24 }]}>Voci di oggi</Text>
-          {loading && entries.length === 0 && <ActivityIndicator color={colors.accent} />}
-          {!loading && entries.length === 0 && <Text style={styles.empty}>Nessuna voce per oggi</Text>}
-          {entries.map(item => (
-            <View key={item.id} style={styles.entry}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.entryText}>{item.food_name_snapshot}</Text>
-                {item.meal_type === 'AI' ? (
-                  <Text style={styles.entryQty}>{Math.round(item.calories_calculated)} kcal</Text>
-                ) : (
-                  <Text style={styles.entryQty}>{item.consumed_quantity}{item.consumed_unit} · {Math.round(item.calories_calculated)} kcal</Text>
-                )}
+        <FlatList
+          data={entries}
+          keyExtractor={keyExtractor}
+          renderItem={renderEntry}
+          keyboardShouldPersistTaps='handled'
+          contentContainerStyle={{ paddingBottom: 40 }}
+          ListHeaderComponent={
+            <View>
+              <View style={styles.searchBar}>
+                <Ionicons name="search" size={16} color={colors.textMuted} style={{ marginRight: 8 }} />
+                <TextInput
+                  placeholder='Cerca alimento'
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.searchInput}
+                  value={search}
+                  onChangeText={(t: string) => { setSearch(t); }}
+                  accessibilityLabel="Cerca alimento"
+                />
               </View>
-              <View style={styles.rowActions}>
-                <Pressable onPress={() => navigation.navigate('EditDiaryEntry', { id: item.id })}><Text style={styles.action}>✎</Text></Pressable>
-                <Pressable onPress={() => removeEntry(item.id)}><Text style={styles.actionDelete}>✕</Text></Pressable>
-              </View>
+              {searchLoading && (
+                <Text style={styles.searchHint}>Ricerca in corso...</Text>
+              )}
+              {results.length > 0 && (
+                <View style={styles.resultsDropdown}>
+                  {results.slice(0, 6).map(r => (
+                    <Pressable
+                      key={r.id}
+                      style={styles.resultRow}
+                      onPress={() => addFromSearch(r)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Aggiungi ${r.name}`}
+                    >
+                      <Text style={styles.resultText}>{r.name}</Text>
+                      <Text style={styles.resultCals}>{Math.round(r.calories || 0)} kcal</Text>
+                      <Ionicons name='add-circle-outline' size={20} color={colors.accent} />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+
+              {/* Action Buttons */}
+              <Pressable
+                style={styles.actionRow}
+                onPress={() => navigation.navigate('BarcodeScanner')}
+                accessibilityRole="button"
+                accessibilityLabel="Scansiona codice a barre"
+              >
+                <View style={styles.actionIcon}><Ionicons name="barcode-outline" size={24} color={colors.accent} /></View>
+                <Text style={styles.actionLabel}>Scansiona codice a barre</Text>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </Pressable>
+
+              <Pressable
+                style={styles.actionRow}
+                onPress={() => navigation.navigate('MealAnalysis')}
+                accessibilityRole="button"
+                accessibilityLabel="Analizza pasto"
+              >
+                <View style={styles.actionIcon}><Ionicons name="sparkles-outline" size={24} color={colors.accent} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.actionLabel}>Analizza pasto</Text>
+                  <Text style={styles.actionSub}>Nuova funzione</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </Pressable>
+
+              <Pressable
+                style={styles.actionRow}
+                onPress={() => setManualModal(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Aggiungi manualmente"
+              >
+                <View style={styles.actionIcon}><Ionicons name="create-outline" size={24} color={colors.accent} /></View>
+                <Text style={styles.actionLabel}>Manuale</Text>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </Pressable>
+
+              <Text style={styles.recentsHeader}>Alimenti Recenti & Pasti</Text>
+              {combinedItems.map(item => {
+                if (item.type === 'food') {
+                  const r = item.data;
+                  return (
+                    <View key={`f-${r.id}`} style={styles.recentCard}>
+                      <View style={styles.thumb}>{chooseEmoji(r.food_name_snapshot, {
+                        calories: r.calories_calculated,
+                        protein: r.protein_g_calculated,
+                        carbs: r.carbohydrates_total_g_calculated,
+                        fat: r.fat_total_g_calculated
+                      })}</View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.recentName}>{r.food_name_snapshot}</Text>
+                        <Text style={styles.recentQty}>{r.consumed_quantity}{r.consumed_unit} · {Math.round(r.calories_calculated || 0)} kcal</Text>
+                      </View>
+                    </View>
+                  );
+                }
+                if (item.type === 'compositeItem') {
+                  const it = item.data; // composite_meal_item row
+                  return (
+                    <View key={`ci-${it.id}`} style={styles.recentCard}>
+                      <View style={styles.thumb}>{chooseEmoji(it.item_name, {
+                        calories: it.calories,
+                        protein: it.protein_g,
+                        carbs: it.carbohydrates_g,
+                        fat: it.fat_g
+                      })}</View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.recentName}>{it.item_name}</Text>
+                        <Text style={styles.recentQty}>{Math.round(it.calories)} kcal · P{Math.round(it.protein_g)} C{Math.round(it.carbohydrates_g)} F{Math.round(it.fat_g)}</Text>
+                      </View>
+                    </View>
+                  );
+                }
+                return null;
+              })}
+              {combinedItems.length === 0 && !loadingComposite && <Text style={styles.noRecent}>Nessun alimento o pasto AI</Text>}
+              <Text style={[styles.recentsHeader, { marginTop: 24 }]}>Voci di oggi</Text>
             </View>
-          ))}
-        </ScrollView>
+          }
+          ListEmptyComponent={
+            <View>
+              {loading ? (
+                <ActivityIndicator color={colors.accent} />
+              ) : (
+                <Text style={styles.empty}>Nessuna voce per oggi</Text>
+              )}
+            </View>
+          }
+        />
 
         {/* Manual Add Modal */}
         <Modal visible={manualModal} animationType="fade" transparent onRequestClose={() => setManualModal(false)}>
@@ -420,6 +484,7 @@ const styles = StyleSheet.create({
   addBtnDisabled: { backgroundColor: colors.accentMuted },
   addBtnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
   searchBox: { marginBottom: 18 },
+  searchHint: { color: colors.textMuted, fontSize: 12, marginBottom: 8 },
   resultsBox: { position: 'absolute', top: 50, left: 0, right: 0, backgroundColor: colors.card, borderRadius: 12, borderWidth: 1, borderColor: colors.borderAlt, zIndex: 20, paddingVertical: 4 },
   resultRow: { paddingVertical: 8, paddingHorizontal: 12, flexDirection: 'row', justifyContent: 'space-between' },
   resultText: { color: colors.textPrimary, flex: 1, paddingRight: 8, fontSize: 13 },
@@ -444,7 +509,7 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.cardAlt, padding: 14, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: colors.border },
   actionIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: colors.card, alignItems: 'center', justifyContent: 'center', marginRight: 14, borderWidth: 1, borderColor: colors.borderAlt },
   actionLabel: { flex: 1, color: colors.textPrimary, fontSize: 14, fontWeight: '600' },
-  actionSub: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  actionSub: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
   recentsHeader: { color: colors.textPrimary, fontSize: 13, fontWeight: '600', marginTop: 12, marginBottom: 10, letterSpacing: 0.5 },
   recentCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.cardAlt, padding: 12, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: colors.border },
   thumb: { width: 46, height: 46, borderRadius: 14, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.borderAlt, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
