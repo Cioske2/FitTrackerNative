@@ -1,4 +1,4 @@
 {
   "compilerOptions": {},
-  "extends": "expo/tsconfig.base"
+  "extends": "./rn-app/node_modules/expo/tsconfig.base.json"
 }
